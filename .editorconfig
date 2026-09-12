@@ -1527,6 +1527,7 @@ dotnet_diagnostic.SST1706.severity = error # An extension block targets a broad 
 dotnet_diagnostic.SST1707.severity = error # Extension blocks should be ordered by receiver type
 dotnet_diagnostic.SST1708.severity = error # An extension method never uses its this receiver
 dotnet_diagnostic.SST1709.severity = error # A method in an *Extensions class whose first parameter lacks this
+dotnet_diagnostic.SST1710.severity = error # Prefer an extension indexer over an accessor-shaped extension method
 dotnet_diagnostic.SST1800.severity = error # Record classes should be sealed
 dotnet_diagnostic.SST1801.severity = error # A positional record parameter does not match the configured casing
 dotnet_diagnostic.SST1802.severity = error # A record declares a settable rather than init-only instance property
@@ -1538,6 +1539,7 @@ dotnet_diagnostic.SST2102.severity = error # A span-targeted stackalloc initiali
 dotnet_diagnostic.SST2103.severity = error # A collection-builder factory call can use a collection expression
 dotnet_diagnostic.SST2104.severity = error # A short builder-local sequence can return a collection expression
 dotnet_diagnostic.SST2105.severity = error # A literal array materialized with LINQ can use a collection expression
+dotnet_diagnostic.SST2106.severity = error # Pass the capacity or comparer through a collection expression
 dotnet_diagnostic.SST2200.severity = error # A single-use backing field can use the C# 14 field keyword
 dotnet_diagnostic.SST2201.severity = error # A return-only switch statement can use a switch expression
 dotnet_diagnostic.SST2202.severity = error # An object creation repeats an explicit target type
@@ -1626,6 +1628,7 @@ dotnet_diagnostic.SST2285.severity = error # A null guard is conjoined with a me
 dotnet_diagnostic.SST2286.severity = error # ToString is called on a receiver already typed as string
 dotnet_diagnostic.SST2287.severity = error # A while loop owns its counter, so a for header would gather it
 dotnet_diagnostic.SST2288.severity = error # A conditional expression has a boolean literal in exactly one branch
+dotnet_diagnostic.SST2289.severity = error # An unsafe block that no longer needs an unsafe context
 # Design
 dotnet_diagnostic.SST2300.severity = error # A class implements IDisposable but builds only half of the disposal pattern
 dotnet_diagnostic.SST2301.severity = error # A class implementing IEquatable<T> for itself can still be derived from
@@ -1664,6 +1667,8 @@ dotnet_diagnostic.SST2333.severity = error # A generic equality contract lacks i
 dotnet_diagnostic.SST2334.severity = error # A publicly visible type has no `[DebuggerDisplay]`
 dotnet_diagnostic.SST2335.severity = error # Parts of a partial type disagree on the `static` modifier
 dotnet_diagnostic.SST2336.severity = error # A concrete attribute type declares no [AttributeUsage]
+dotnet_diagnostic.SST2337.severity = error # Declare a fully known hierarchy as closed
+dotnet_diagnostic.SST2338.severity = none # Declare a hand-rolled discriminated type as a union
 
 # Correctness
 dotnet_diagnostic.SST2400.severity = error # Two arguments name each other's parameters and have been transposed
@@ -1757,6 +1762,7 @@ dotnet_diagnostic.SST2495.severity = error # A [Flags] combination includes bits
 dotnet_diagnostic.SST2496.severity = error # An explicit Dispose/Close an enclosing using already performs
 dotnet_diagnostic.SST2497.severity = error # A member forwards to itself, so calling it recurses until the stack is gone
 dotnet_diagnostic.SST2498.severity = error # nameof on a type parameter is the constant "T"
+dotnet_diagnostic.SST2499.severity = error # Read the exit status rather than the exit code when a process can be signalled
 
 # Testing
 dotnet_diagnostic.SST2500.severity = error # A test method contains no assertion and no expected-exception check
@@ -1821,6 +1827,7 @@ dotnet_diagnostic.PSH1020.severity = error # Prefer a jagged array over a multid
 dotnet_diagnostic.PSH1021.severity = error # An explicit GC.Collect forces collection the runtime tunes itself
 dotnet_diagnostic.PSH1022.severity = error # A parameterless new EventArgs() where EventArgs.Empty would serve
 dotnet_diagnostic.PSH1023.severity = error # A local anonymous type allocates where a tuple would not
+dotnet_diagnostic.PSH1024.severity = error # Build a BitArray from a span instead of a temporary array
 dotnet_diagnostic.PSH1100.severity = error # Hot-path code should avoid System.Linq.Enumerable calls
 dotnet_diagnostic.PSH1101.severity = none # LINQ predicate simplification — production code avoids LINQ on hot paths
 dotnet_diagnostic.PSH1102.severity = none # LINQ type-filter simplification — production code avoids LINQ on hot paths
@@ -1892,6 +1899,7 @@ dotnet_diagnostic.PSH1313.severity = error # A synchronous call where an async o
 dotnet_diagnostic.PSH1314.severity = error # Read and write streams through the memory-based overloads
 dotnet_diagnostic.PSH1315.severity = error # A blocking wait on an awaitable that may not be done
 dotnet_diagnostic.PSH1316.severity = error # A ValueTask is awaited in a loop or awaited after being copied
+dotnet_diagnostic.PSH1318.severity = error # Validate options asynchronously instead of blocking
 dotnet_diagnostic.PSH1400.severity = error # Use the static HashData method for one-shot hashing
 dotnet_diagnostic.PSH1401.severity = error # Attribute types should be sealed
 dotnet_diagnostic.PSH1402.severity = error # Use const for compile-time constants
@@ -1946,6 +1954,7 @@ dotnet_diagnostic.SES1006.severity = error # A Data Protection key ring is persi
 dotnet_diagnostic.SES1007.severity = error # A cryptographic primitive is implemented by hand
 dotnet_diagnostic.SES1008.severity = error # An XML signature is verified with the no-key CheckSignature overload
 dotnet_diagnostic.SES1009.severity = error # A password is stored without a slow, salted key-derivation function
+dotnet_diagnostic.SES1010.severity = error # Do not implement AES key wrapping by hand
 
 # Transport
 dotnet_diagnostic.SES1102.severity = error # Do not accept any server certificate
