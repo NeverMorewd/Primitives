@@ -29,12 +29,6 @@ public sealed class ExpireCoordinatorTests
     /// <summary>The values forwarded by the active-source re-arming test.</summary>
     private static readonly int[] ExpectedActiveValues = [0, 1, 2, 3, 4];
 
-    /// <summary>Timeout used while waiting for background work in this test.</summary>
-    private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(5);
-
-    /// <summary>How long the superseded timeout is given to reach the observer before the invariant is checked.</summary>
-    private static readonly TimeSpan RaceSettleDelay = TimeSpan.FromMilliseconds(50);
-
     /// <summary>Verifies the timeout re-arms on each value so an active source never expires.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
@@ -169,61 +163,21 @@ public sealed class ExpireCoordinatorTests
         await Assert.That(errors.Count).IsEqualTo(0);
     }
 
-    /// <summary>Verifies an in-flight value wins the race and suppresses the superseded timeout.</summary>
+    /// <summary>Verifies a timeout that becomes due while a value is in flight is suppressed by that value.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task TimeoutDoesNotEnterObserverWhileOnNextIsInFlight()
     {
         VirtualClock clock = new(DateTimeOffset.UnixEpoch);
         Signal<int> source = new();
-        BlockingObserver observer = new();
+        ReentrantTimeoutObserver observer = new(clock, TimeSpan.FromTicks(One));
         using var subscription = source.Expire(TimeSpan.FromTicks(One), clock).Subscribe(observer);
 
-        // Dedicated threads rather than the pool: the observer parks its caller inside OnNext until this
-        // test releases it, so on the pool that notification holds a worker while the timeout waits behind
-        // it in the queue. A saturated pool then starves the very interleaving under test.
-        var onNextFinished = RunOnDedicatedThread(() => source.OnNext(One));
-        await observer.OnNextEntered.Task.WaitAsync(WaitTimeout).ConfigureAwait(false);
-
-        var timeoutFinished = RunOnDedicatedThread(() => clock.AdvanceBy(TimeSpan.FromTicks(One)));
-        await Task.Delay(RaceSettleDelay).ConfigureAwait(false);
+        source.OnNext(One);
 
         await Assert.That(observer.ErrorEnteredDuringOnNext).IsFalse();
-
-        observer.ReleaseOnNext.Set();
-        await onNextFinished.WaitAsync(WaitTimeout).ConfigureAwait(false);
-        await timeoutFinished.WaitAsync(WaitTimeout).ConfigureAwait(false);
-
-        // Timeout may be observed after OnNext exits depending on scheduler timing.
-        // The invariant required here is that OnError never re-enters while OnNext is active.
-        await Assert.That(observer.Errors).IsLessThanOrEqualTo(One);
+        await Assert.That(observer.Errors).IsEqualTo(0);
         await Assert.That(observer.Values).IsEqualTo(One);
-    }
-
-    /// <summary>
-    /// Runs work on its own thread and reports when it finished. Used where the work blocks for the duration of
-    /// the scenario, which the thread pool cannot absorb without the risk of the work never being given a thread.
-    /// </summary>
-    /// <param name="work">The work to run.</param>
-    /// <returns>A task that completes when the work has returned.</returns>
-    private static Task RunOnDedicatedThread(Action work)
-    {
-        TaskCompletionSource finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        Thread thread = new(() =>
-        {
-            try
-            {
-                work();
-                _ = finished.TrySetResult();
-            }
-            catch (Exception error)
-            {
-                _ = finished.TrySetException(error);
-            }
-        }) { IsBackground = true };
-
-        thread.Start();
-        return finished.Task;
     }
 
     /// <summary>
@@ -264,44 +218,23 @@ public sealed class ExpireCoordinatorTests
         public void Schedule(IWorkItem item, long dueTimestamp) => Pending++;
     }
 
-    /// <summary>Observer that blocks source value handling so timeout serialization can be observed.</summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Design",
-        "SST2315:A type that owns a disposable should be disposable",
-        Justification =
-            "Test double that owns a ManualResetEventSlim used to gate OnNext so the test can observe timeout "
-            + "serialization. Its lifetime is the test's; the test process owns and releases it, so it is deliberately "
-            + "not IDisposable.")]
-    private sealed class BlockingObserver : IObserver<int>
+    /// <summary>Observer that makes the armed timeout due from inside <see cref="OnNext"/>, so the timeout is
+    /// dispatched while the value is still in flight.</summary>
+    /// <param name="clock">The clock that dispatches due work inline.</param>
+    /// <param name="dueTime">The amount to advance the clock by so the armed timeout becomes due.</param>
+    private sealed class ReentrantTimeoutObserver(VirtualClock clock, TimeSpan dueTime) : IObserver<int>
     {
-        /// <summary>Non-zero while <see cref="OnNext"/> is active. Written by the notifying thread and read by
-        /// the timeout thread, so the two must not race on a plain field.</summary>
-        private int _isInOnNext;
-
-        /// <summary>Non-zero once an error arrived while <see cref="OnNext"/> was active. The test reads this
-        /// while both threads are still running, so the write has to be published rather than merely made.</summary>
-        private int _errorEnteredDuringOnNext;
-
-        /// <summary>The number of forwarded values.</summary>
-        private int _values;
-
-        /// <summary>The number of forwarded errors.</summary>
-        private int _errors;
-
-        /// <summary>Gets the task completed when <see cref="OnNext"/> is entered.</summary>
-        public TaskCompletionSource OnNextEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        /// <summary>Gets the event released by the test to unblock <see cref="OnNext"/>.</summary>
-        public ManualResetEventSlim ReleaseOnNext { get; } = new();
-
         /// <summary>Gets the number of forwarded values.</summary>
-        public int Values => Volatile.Read(ref _values);
+        public int Values { get; private set; }
 
         /// <summary>Gets the number of forwarded errors.</summary>
-        public int Errors => Volatile.Read(ref _errors);
+        public int Errors { get; private set; }
 
-        /// <summary>Gets a value indicating whether an error entered while <see cref="OnNext"/> was active.</summary>
-        public bool ErrorEnteredDuringOnNext => Volatile.Read(ref _errorEnteredDuringOnNext) != 0;
+        /// <summary>Gets a value indicating whether an error arrived while <see cref="OnNext"/> was active.</summary>
+        public bool ErrorEnteredDuringOnNext { get; private set; }
+
+        /// <summary>Gets or sets a value indicating whether <see cref="OnNext"/> is active.</summary>
+        private bool IsInOnNext { get; set; }
 
         /// <inheritdoc/>
         public void OnCompleted()
@@ -311,22 +244,21 @@ public sealed class ExpireCoordinatorTests
         /// <inheritdoc/>
         public void OnError(Exception error)
         {
-            if (Volatile.Read(ref _isInOnNext) != 0)
+            if (IsInOnNext)
             {
-                Volatile.Write(ref _errorEnteredDuringOnNext, 1);
+                ErrorEnteredDuringOnNext = true;
             }
 
-            _ = Interlocked.Increment(ref _errors);
+            Errors++;
         }
 
         /// <inheritdoc/>
         public void OnNext(int value)
         {
-            _ = Interlocked.Increment(ref _values);
-            Volatile.Write(ref _isInOnNext, 1);
-            OnNextEntered.SetResult();
-            _ = ReleaseOnNext.Wait(WaitTimeout);
-            Volatile.Write(ref _isInOnNext, 0);
+            Values++;
+            IsInOnNext = true;
+            clock.AdvanceBy(dueTime);
+            IsInOnNext = false;
         }
     }
 }
