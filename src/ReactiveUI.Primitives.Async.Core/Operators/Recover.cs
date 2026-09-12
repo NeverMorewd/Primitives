@@ -7,9 +7,6 @@ using ReactiveUI.Primitives.Async.Disposables;
 namespace ReactiveUI.Primitives.Async;
 
 /// <summary>Provides extension methods for composing and handling asynchronous observable sequences.</summary>
-/// <remarks>The methods in this class enable advanced error handling and composition scenarios for asynchronous
-/// observables. These extensions are intended to be used with the SignalAsync{T} type to facilitate robust,
-/// composable, and resilient asynchronous data streams.</remarks>
 public static partial class SignalAsyncExtensions
 {
     /// <summary>Error-handling operators for an observable source sequence.</summary>
@@ -17,19 +14,13 @@ public static partial class SignalAsyncExtensions
     /// <param name="source">The source observable sequence.</param>
     extension<T>(IObservableAsync<T> source)
     {
-        /// <summary>
-        /// Creates a new observable sequence that continues with a handler-provided sequence when an exception occurs
-        /// in the source sequence.
-        /// </summary>
+        /// <summary>Creates a new observable sequence that continues with a handler-provided sequence when an exception occurs in the source sequence.</summary>
         /// <param name="handler">A function that receives the exception thrown by the source sequence and returns an alternative observable
         /// sequence to continue with.</param>
         /// <returns>An observable sequence that emits items from the source sequence, or from the handler-provided sequence if
         /// an exception is encountered.</returns>
         /// <exception cref="ArgumentNullException">Thrown if the source sequence or <paramref name="handler"/> is null.</exception>
-        /// <remarks>Use this method to recover from errors in the source sequence by switching to an
-        /// alternative observable sequence. The handler function is called with the exception, allowing custom error
-        /// recovery logic. If the handler itself throws an exception, the resulting sequence completes with that
-        /// exception.</remarks>
+        /// <remarks>If the handler throws, the resulting sequence completes with that exception.</remarks>
         public IObservableAsync<T> Recover(Func<Exception, IObservableAsync<T>> handler)
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -48,17 +39,13 @@ public static partial class SignalAsyncExtensions
             return new CatchSignal<T>(source, _ => fallback, null);
         }
 
-        /// <summary>
-        /// Continues the observable sequence with an alternative sequence provided by the specified handler when an
-        /// error occurs, and ignores the error after invoking the handler.
-        /// </summary>
+        /// <summary>Continues the observable sequence with an alternative sequence provided by the specified handler when an error occurs, and ignores the error after invoking the handler.</summary>
         /// <param name="handler">A function that receives the exception and returns an alternative observable sequence to resume with after
         /// an error occurs.</param>
         /// <returns>An observable sequence that resumes with the sequence returned by the handler when an error is encountered,
         /// and ignores the error after handling.</returns>
-        /// <remarks>If an error occurs and the handler is invoked, the error is also reported to the
-        /// global unhandled exception handler before being ignored. This method allows the sequence to continue without
-        /// propagating the error to subscribers.</remarks>
+        /// <remarks>An error-resume notification is reported to the global unhandled-exception handler rather than
+        /// forwarded downstream, so subscribers never observe it.</remarks>
         public IObservableAsync<T> CatchAndIgnoreErrorResume(Func<Exception, IObservableAsync<T>> handler)
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -75,11 +62,7 @@ public static partial class SignalAsyncExtensions
         }
     }
 
-    /// <summary>
-    /// Observable wrapper for <see cref="Catch{T}(IObservableAsync{T}, Func{Exception,IObservableAsync{T}}, Func{Exception,CancellationToken,ValueTask}?)"/>.
-    /// Allocates one observable wrapper and one sealed observer per subscription — no per-emission closure or
-    /// state-machine box from the previous <c>Create&lt;T&gt;((observer, token) =&gt; ...)</c> pattern.
-    /// </summary>
+    /// <summary>Subscribes the handler-produced fallback observable when the source completes with a failure.</summary>
     /// <typeparam name="T">The element type of the source sequence.</typeparam>
     /// <param name="source">The source observable.</param>
     /// <param name="handler">The fallback handler invoked with the source exception when the source completes with a failure.</param>
@@ -97,8 +80,6 @@ public static partial class SignalAsyncExtensions
         {
             CatchWitness sink = new(observer, handler, onErrorResume, cancellationToken);
 
-            // Wire sink's dispose token into the downstream's link chain so the downstream's hot path
-            // recognises this token without allocating a per-emission linked CTS.
             if (observer is WitnessAsync<T> downstreamBase)
             {
                 downstreamBase.LinkUpstreamCancellation(sink.InternalDisposedToken);
@@ -109,9 +90,7 @@ public static partial class SignalAsyncExtensions
             return sink;
         }
 
-        /// <summary>Per-subscription witness that forwards <c>OnNext</c> verbatim, delegates error-resume to the
-        /// supplied callback (or the downstream when none was supplied), and on a failed completion subscribes the
-        /// handler-produced fallback observable in place of forwarding the failure.</summary>
+        /// <summary>Forwards values, routes error-resume to the callback or downstream, and swaps in the fallback on failure.</summary>
         /// <param name="downstream">The downstream witness.</param>
         /// <param name="handler">The fallback factory.</param>
         /// <param name="onErrorResume">Optional async error-resume callback.</param>
@@ -123,8 +102,7 @@ public static partial class SignalAsyncExtensions
             Func<Exception, CancellationToken, ValueTask>? onErrorResume,
             CancellationToken subscribeToken) : WitnessAsync<T>(subscribeToken)
         {
-            /// <summary>Holds the handler-produced subscription so it disposes with the sink. Single-assignment
-            /// because the handler is subscribed at most once (on a failed source completion).</summary>
+            /// <summary>Holds the handler-produced subscription, assigned at most once, so it disposes with the sink.</summary>
             private readonly SingleAssignmentDisposableAsync _handlerDisposable = new();
 
             /// <summary>The subscribe-time token, reused when subscribing the fallback handler observable.</summary>

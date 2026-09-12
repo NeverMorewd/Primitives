@@ -17,9 +17,11 @@ public static partial class Sequencer
     public static ISequencer Default => TaskPoolSequencer.Default;
 
     /// <summary>Gets the shared wall-clock time used by real-time sequencers.</summary>
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     internal static DateTimeOffset Now => TimeProvider.System.GetUtcNow();
 
     /// <summary>Gets the current monotonic timestamp used by real-time sequencers.</summary>
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     internal static long Timestamp => System.Diagnostics.Stopwatch.GetTimestamp();
 
     /// <summary>Normalizes the specified <see cref="TimeSpan"/> value to a positive value.</summary>
@@ -45,9 +47,16 @@ public static partial class Sequencer
     /// <summary>Calculates the remaining wall time until a monotonic timestamp.</summary>
     /// <param name="dueTimestamp">Absolute monotonic timestamp.</param>
     /// <returns>The remaining time until <paramref name="dueTimestamp"/>.</returns>
-    internal static TimeSpan TimeUntil(long dueTimestamp)
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    internal static TimeSpan TimeUntil(long dueTimestamp) => TimeUntil(dueTimestamp, Timestamp);
+
+    /// <summary>Calculates a delay from an explicit monotonic clock reading.</summary>
+    /// <param name="dueTimestamp">The absolute due timestamp.</param>
+    /// <param name="timestamp">The current clock reading.</param>
+    /// <returns>The nonnegative remaining delay.</returns>
+    internal static TimeSpan TimeUntil(long dueTimestamp, long timestamp)
     {
-        var delta = dueTimestamp - Timestamp;
+        var delta = dueTimestamp - timestamp;
         return delta <= 0
             ? TimeSpan.Zero
             : TimeSpan.FromSeconds(delta / (double)System.Diagnostics.Stopwatch.Frequency);
@@ -63,10 +72,17 @@ public static partial class Sequencer
             return TimeSpan.Zero;
         }
 
-        var ticks = timestampDelta * (double)TimeSpan.TicksPerSecond / System.Diagnostics.Stopwatch.Frequency;
-        return ticks >= TimeSpan.MaxValue.Ticks
-            ? TimeSpan.MaxValue
-            : TimeSpan.FromTicks(Math.Max(1, (long)Math.Ceiling(ticks)));
+        var frequency = System.Diagnostics.Stopwatch.Frequency;
+        var seconds = timestampDelta / frequency;
+        if (seconds >= TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerSecond)
+        {
+            return TimeSpan.MaxValue;
+        }
+
+        // Integer arithmetic: scaling through double rounds a representable duration up to the next tick.
+        var ticks = (seconds * TimeSpan.TicksPerSecond)
+                    + ((((timestampDelta % frequency) * TimeSpan.TicksPerSecond) + frequency - 1) / frequency);
+        return TimeSpan.FromTicks(Math.Max(1, ticks));
     }
 
     /// <summary>Converts a relative duration to monotonic timestamp ticks.</summary>
@@ -80,7 +96,17 @@ public static partial class Sequencer
             return 0;
         }
 
-        var ticks = normalized.TotalSeconds * System.Diagnostics.Stopwatch.Frequency;
-        return ticks >= long.MaxValue ? long.MaxValue : Math.Max(1, (long)Math.Ceiling(ticks));
+        var frequency = System.Diagnostics.Stopwatch.Frequency;
+        var seconds = normalized.Ticks / TimeSpan.TicksPerSecond;
+        if (seconds >= long.MaxValue / frequency)
+        {
+            return long.MaxValue;
+        }
+
+        // Integer arithmetic: scaling through double rounds a representable duration up to the next unit.
+        var delta = (seconds * frequency)
+                    + ((((normalized.Ticks % TimeSpan.TicksPerSecond) * frequency) + TimeSpan.TicksPerSecond - 1)
+                       / TimeSpan.TicksPerSecond);
+        return Math.Max(1, delta);
     }
 }

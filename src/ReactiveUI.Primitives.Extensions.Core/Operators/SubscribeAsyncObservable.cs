@@ -6,8 +6,11 @@ using ReactiveUI.Primitives.Extensions.Internal;
 
 namespace ReactiveUI.Primitives.Extensions.Operators;
 
-/// <summary>Subscribes to an observable sequence and executes an asynchronous handler for each element.</summary>
+/// <summary>Queues source values and invokes the asynchronous handler one value at a time.</summary>
 /// <typeparam name="T">The type of elements in the source sequence.</typeparam>
+/// <remarks>
+/// Handler failure invokes the error callback and stops processing. Completion waits for queued values; disposal drops them and unsubscribes.
+/// </remarks>
 [System.Diagnostics.DebuggerDisplay("SubscribeAsyncObservable: Queued = {_queue.Count}, Processing = {_isProcessing}, Done = {_done}")]
 public sealed class SubscribeAsyncObservable<T> : IDisposable
 {
@@ -65,27 +68,36 @@ public sealed class SubscribeAsyncObservable<T> : IDisposable
         }
     }
 
-    /// <summary>Called when a new value is emitted by the source.</summary>
-    /// <param name="value">The value emitted by the source.</param>
-    private void OnNext(T value)
+    /// <summary>Queues a source value and returns the operation started by it.</summary>
+    /// <param name="value">The source value.</param>
+    /// <returns>The processing task, or a completed task if no work starts.</returns>
+    internal Task OnNextAsync(T value)
     {
+        var processing = Task.CompletedTask;
         lock (_gate)
         {
             if (_done || _disposed)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             _queue.Enqueue(value);
             if (!_isProcessing)
             {
                 _isProcessing = true;
-                _ = ProcessNextAsync();
+                processing = ProcessNextAsync();
             }
         }
+
+        return processing;
     }
 
-    /// <summary>Called when an error occurs in the source.</summary>
+    /// <summary>Queues a source value.</summary>
+    /// <param name="value">The source value.</param>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private void OnNext(T value) => _ = OnNextAsync(value);
+
+    /// <summary>Routes a source error to the error callback and stops processing the queue.</summary>
     /// <param name="error">The error that occurred.</param>
     private void OnError(Exception error)
     {
@@ -101,7 +113,7 @@ public sealed class SubscribeAsyncObservable<T> : IDisposable
         }
     }
 
-    /// <summary>Called when the source completes.</summary>
+    /// <summary>Marks the source finished and runs the completion callback when no handler is in flight.</summary>
     private void OnCompleted()
     {
         lock (_gate)
@@ -119,7 +131,7 @@ public sealed class SubscribeAsyncObservable<T> : IDisposable
         }
     }
 
-    /// <summary>Processes the next value in the queue.</summary>
+    /// <summary>Runs the handler for queued values in turn, invoking the completion callback when the queue empties after the source finishes.</summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     private async Task ProcessNextAsync()
     {

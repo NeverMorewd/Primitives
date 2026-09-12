@@ -7,16 +7,14 @@ using System.Runtime.CompilerServices;
 
 namespace ReactiveUI.Primitives.Extensions;
 
-/// <summary>
-/// Limits the concurrency of task execution and emits results through an observable sequence.
-/// Implements <see cref="IObservable{T}"/> directly so the surface needs no
-/// <c>ActionDisposable</c> closure wrappers; the per-task continuation state is the
-/// per-subscription <see cref="Subscription"/> instance, which is already a reference type
-/// and therefore needs no boxing through <see cref="object"/>.
-/// </summary>
+/// <summary>Runs task factories with bounded concurrency and emits results in completion order.</summary>
 /// <typeparam name="T">The type of the task results.</typeparam>
 /// <param name="taskFunctions">The task functions to drain.</param>
 /// <param name="maxConcurrency">The maximum concurrency.</param>
+/// <remarks>
+/// Subscribers share progress; disposing any subscription stops every drain. A task fault or cancellation terminates the sequence with its
+/// error.
+/// </remarks>
 [System.Diagnostics.DebuggerDisplay("ConcurrencyLimiter: Outstanding = {_outstanding}, Disposed = {_disposed}")]
 public sealed class ConcurrencyLimiter<T>(IEnumerable<Task<T>> taskFunctions, int maxConcurrency) : IObservable<T>
 {
@@ -26,20 +24,16 @@ public sealed class ConcurrencyLimiter<T>(IEnumerable<Task<T>> taskFunctions, in
     /// <summary>The number of tasks currently in flight that have not yet completed.</summary>
     private int _outstanding;
 
-    /// <summary>Global disposal latch set by any <see cref="Subscription.Dispose"/>. Preserves the
-    /// existing single-subscription-at-a-time semantics: once any consumer disposes, the limiter
-    /// stops pulling further tasks.</summary>
+    /// <summary>Disposal latch set by any subscription; once set, no further tasks are pulled.</summary>
     private int _disposed;
 
-    /// <summary>Lazy enumerator over the source task sequence; <see langword="null"/> once exhausted.</summary>
+    /// <summary>Lazy enumerator over the source task sequence; <see langword="null"/> when exhausted.</summary>
     private IEnumerator<Task<T>>? _rator;
 
-    /// <summary>Gets the observable sequence — the limiter is its own <see cref="IObservable{T}"/>.</summary>
+    /// <summary>Gets this limiter as an observable sequence of task results.</summary>
     public IObservable<T> Observable => this;
 
-    /// <summary>Gets or sets a value indicating whether the limiter has been disposed by any
-    /// consumer. Exposed to internal tests; production paths set it via
-    /// <see cref="Subscription.Dispose"/>.</summary>
+    /// <summary>Gets or sets a value indicating whether any subscription has disposed the limiter.</summary>
     [SuppressMessage(
         "RoslynCommonAnalyzers",
         "SST2200:Replace this single-use backing field with the 'field' keyword",
@@ -68,31 +62,28 @@ public sealed class ConcurrencyLimiter<T>(IEnumerable<Task<T>> taskFunctions, in
         return subscription;
     }
 
-    /// <summary>Clears the lazy enumerator. Caller must hold <see cref="_gate"/> on the production
-    /// paths; exposed to internal tests that exercise the idempotent-second-call branch.</summary>
+    /// <summary>Disposes and drops the task enumerator; callers must hold <see cref="_gate"/>.</summary>
     internal void ClearRator()
     {
         _rator?.Dispose();
         _rator = null;
     }
 
-    /// <summary>Test entry point that adapts a raw <see cref="IObserver{T}"/> into a fresh
-    /// <see cref="Subscription"/> and pulls the next task. Production paths go through
-    /// <see cref="Subscribe"/> which creates the subscription once.</summary>
+    /// <summary>Wraps the observer in a fresh subscription and pulls the next task for it.</summary>
     /// <param name="observer">The observer that will receive notifications.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void PullNextTask(IObserver<T> observer) =>
         PullNextTask(new Subscription(this, observer));
 
-    /// <summary>Processes the completion of a previously-scheduled task.</summary>
+    /// <summary>Delivers a finished task's result and pulls the next one, or terminates the sequence on failure.</summary>
     /// <param name="subscription">The owning subscription.</param>
     /// <param name="completed">The completed task.</param>
     [SuppressMessage(
         "Concurrency",
         "PSH1315:A blocking wait on an awaitable that may not be done",
         Justification =
-            "Task is guaranteed complete at this call site (IsFaulted/IsCanceled were both false above); reading .Result drives the synchronous IObserver<T> contract without blocking.")]
-    private void ProcessTaskCompletion(Subscription subscription, Task<T> completed)
+            "The task is complete at this call site, so reading Result does not block.")]
+    internal void ProcessTaskCompletion(Subscription subscription, Task<T> completed)
     {
         lock (_gate)
         {
@@ -123,6 +114,22 @@ public sealed class ConcurrencyLimiter<T>(IEnumerable<Task<T>> taskFunctions, in
         }
     }
 
+    /// <summary>Registers result delivery for the pending task.</summary>
+    /// <param name="task">The pending task.</param>
+    /// <param name="subscription">The result recipient.</param>
+    [ExcludeFromCodeCoverage]
+    private static void RegisterCompletion(Task<T> task, Subscription subscription) =>
+        _ = task.ContinueWith(
+            static (completed, state) =>
+            {
+                var owner = (Subscription)state!;
+                owner.Limiter.ProcessTaskCompletion(owner, completed);
+            },
+            subscription,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
     /// <summary>Pulls the next task and schedules its continuation against this limiter.</summary>
     /// <param name="subscription">The owning subscription.</param>
     private void PullNextTask(Subscription subscription)
@@ -152,25 +159,14 @@ public sealed class ConcurrencyLimiter<T>(IEnumerable<Task<T>> taskFunctions, in
 
             _outstanding++;
 
-            // The continuation passes the Subscription as state — already a reference type, so
-            // no per-task ValueTuple boxing is needed. The static lambda preserves zero closure
-            // capture.
-            _rator.Current?.ContinueWith(
-                static (ant, state) =>
-                {
-                    var sub = (Subscription)state!;
-                    sub.Limiter.ProcessTaskCompletion(sub, ant);
-                },
-                subscription,
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
+            if (_rator.Current is { } task)
+            {
+                RegisterCompletion(task, subscription);
+            }
         }
     }
 
-    /// <summary>Per-subscription handle: holds the observer reference and a disposal latch.
-    /// Replaces the previous <c>ActionDisposable(() =&gt; Disposed = true)</c> pattern with a
-    /// dedicated class — no closure object per subscribe.</summary>
+    /// <summary>Pairs an observer with its limiter and reports the limiter's disposal state to the drain loop.</summary>
     /// <param name="limiter">The owning limiter.</param>
     /// <param name="observer">The downstream observer.</param>
     internal sealed class Subscription(ConcurrencyLimiter<T> limiter, IObserver<T> observer) : IDisposable

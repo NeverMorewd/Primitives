@@ -6,19 +6,14 @@ using System.Runtime.CompilerServices;
 
 namespace ReactiveUI.Primitives.Extensions.Operators;
 
-/// <summary>
-/// Fused <c>.SelectMany(first).SelectMany(second)</c> operator that chains two one-shot
-/// async projections in a single operator allocation. The source emits a value, it's
-/// projected through <paramref name="first"/> producing an intermediate observable, whose
-/// single emission is then projected through <paramref name="second"/> producing the
-/// final result. Errors at any stage propagate to the downstream observer.
-/// </summary>
+/// <summary>Projects each source value through two successive observable selectors and forwards the second-stage values.</summary>
 /// <typeparam name="TSource">The source element type.</typeparam>
 /// <typeparam name="TMid">The intermediate element type produced by the first projection.</typeparam>
 /// <typeparam name="TResult">The final element type produced by the second projection.</typeparam>
 /// <param name="source">The source observable.</param>
 /// <param name="first">First projection: source element → intermediate observable.</param>
 /// <param name="second">Second projection: intermediate element → result observable.</param>
+/// <remarks>A selector failure terminates the sequence; the first inner completion completes the result.</remarks>
 public sealed class SelectManyThenObservable<TSource, TMid, TResult>(
     IObservable<TSource> source,
     Func<TSource, IObservable<TMid>> first,
@@ -34,9 +29,7 @@ public sealed class SelectManyThenObservable<TSource, TMid, TResult>(
         return source.Subscribe(new SourceWitness(observer, first, second));
     }
 
-    /// <summary>Receives the source value and subscribes to the first projection. Holds a single
-    /// reusable <see cref="MidWitness"/> created at subscribe time — the mid observer captures
-    /// only <c>downstream</c> and <c>second</c>, so the same instance handles every source emission.</summary>
+    /// <summary>Observer that runs the first projection per source element and feeds its sequence to the shared intermediate observer.</summary>
     private sealed class SourceWitness : IObserver<TSource>
     {
         /// <summary>The downstream observer that ultimately receives <typeparamref name="TResult"/> values.</summary>
@@ -45,10 +38,10 @@ public sealed class SelectManyThenObservable<TSource, TMid, TResult>(
         /// <summary>First projection delegate.</summary>
         private readonly Func<TSource, IObservable<TMid>> _first;
 
-        /// <summary>Pre-allocated intermediate observer shared across every source emission.</summary>
+        /// <summary>Intermediate observer shared across every source emission.</summary>
         private readonly MidWitness _midObserver;
 
-        /// <summary>Initializes a new instance of the <see cref="SourceWitness"/> class and primes the reusable mid observer.</summary>
+        /// <summary>Initializes a new instance of the <see cref="SourceWitness"/> class.</summary>
         /// <param name="downstream">The downstream observer.</param>
         /// <param name="first">First projection delegate.</param>
         /// <param name="second">Second projection delegate.</param>
@@ -84,8 +77,7 @@ public sealed class SelectManyThenObservable<TSource, TMid, TResult>(
         public void OnCompleted() => _downstream.OnCompleted();
     }
 
-    /// <summary>Receives the intermediate value, applies <c>second</c>, and subscribes the resulting
-    /// observable directly to <c>downstream</c> — no separate final-stage observer needed.</summary>
+    /// <summary>Observer that runs the second projection and subscribes its sequence straight to the downstream observer.</summary>
     /// <param name="downstream">The downstream observer.</param>
     /// <param name="second">Second projection delegate.</param>
     private sealed class MidWitness(

@@ -7,10 +7,7 @@ using ReactiveUI.Primitives.Async.Disposables;
 
 namespace ReactiveUI.Primitives.Async;
 
-/// <summary>
-/// Async observable that switches to the most recently emitted inner observable sequence,
-/// unsubscribing from the previous inner sequence each time a new one arrives.
-/// </summary>
+/// <summary>Async observable that switches to the most recently emitted inner observable sequence, unsubscribing from the previous inner sequence each time a new one arrives.</summary>
 /// <typeparam name="T">The type of elements produced by the inner observable sequences.</typeparam>
 /// <param name="source">The outer observable sequence that emits inner observable sequences.</param>
 public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> source) : IObservableAsync<T>
@@ -30,10 +27,7 @@ public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> sour
             () => subscription.SubscribeAsync(source, cancellationToken));
     }
 
-    /// <summary>
-    /// Manages the lifetime of the outer subscription and the currently active inner subscription,
-    /// switching to new inner sequences as they arrive.
-    /// </summary>
+    /// <summary>Manages the lifetime of the outer subscription and the currently active inner subscription, switching to new inner sequences as they arrive.</summary>
     internal sealed class SwitchToCoordinator : IAsyncDisposable
     {
         /// <summary>The downstream observer to forward elements to.</summary>
@@ -42,7 +36,7 @@ public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> sour
         /// <summary>Disposable that holds the single outer subscription.</summary>
         private readonly SingleAssignmentDisposableAsync _outerDisposable = new();
 
-        /// <summary>Cancellation token source used to signal disposal of the subscription.</summary>
+        /// <summary>The cancellation token source that signals disposal of the subscription.</summary>
         private readonly CancellationTokenSource _disposeCts = new();
 
         /// <summary>Cached cancellation token from the dispose cancellation token source.</summary>
@@ -91,10 +85,7 @@ public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> sour
             await _outerDisposable.SetDisposableAsync(outerSubscription).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Handles a new inner observable from the outer sequence by disposing the previous inner subscription
-        /// and subscribing to the new one.
-        /// </summary>
+        /// <summary>Handles a new inner observable from the outer sequence by disposing the previous inner subscription and subscribing to the new one.</summary>
         /// <param name="inner">The new inner observable to switch to.</param>
         /// <returns>A task representing the asynchronous switch operation.</returns>
         internal ValueTask AcceptOuterValueAsync(IObservableAsync<T> inner)
@@ -109,10 +100,7 @@ public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> sour
             return SubscribeReplacementInnerAsync(inner, previousSubscription);
         }
 
-        /// <summary>
-        /// Handles the outer sequence completing, propagating completion downstream when no inner
-        /// sequence is active or when the outer fails.
-        /// </summary>
+        /// <summary>Handles the outer sequence completing, propagating completion downstream when no inner sequence is active or when the outer fails.</summary>
         /// <param name="result">The completion result from the outer sequence.</param>
         /// <returns>A task representing the asynchronous completion operation.</returns>
         internal ValueTask AcceptOuterCompletionAsync(Result result)
@@ -132,10 +120,7 @@ public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> sour
             return shouldComplete ? FinishAsync(Result.Success) : default;
         }
 
-        /// <summary>
-        /// Handles the current inner sequence completing, propagating completion downstream
-        /// if the outer has also completed, or waiting for the next inner sequence otherwise.
-        /// </summary>
+        /// <summary>Handles the current inner sequence completing, propagating completion downstream if the outer has also completed, or waiting for the next inner sequence otherwise.</summary>
         /// <param name="result">The completion result from the inner sequence.</param>
         /// <returns>A task representing the asynchronous completion operation.</returns>
         internal ValueTask AcceptInnerCompletionAsync(Result result)
@@ -183,11 +168,7 @@ public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> sour
             }
         }
 
-        /// <summary>
-        /// Links the original subscribe-time cancellation token into this subscription's dispose chain so
-        /// later per-emission methods can rely on <see cref="_disposeCancellationToken"/> instead of
-        /// allocating a per-emission linked CTS.
-        /// </summary>
+        /// <summary>Routes cancellation of the subscribe-time token into <see cref="_disposeCts"/>, so per-emission code needs no linked source.</summary>
         /// <param name="external">The subscribe-time token.</param>
         internal void LinkExternalCancellation(CancellationToken external)
         {
@@ -257,10 +238,7 @@ public sealed class SwitchToSignal<T>(IObservableAsync<IObservableAsync<T>> sour
             }
         }
 
-        /// <summary>
-        /// Disposes the current inner subscription, the outer subscription, and optionally forwards a
-        /// completion result to the downstream observer. This method is idempotent.
-        /// </summary>
+    /// <summary>Disposes the current inner and outer subscriptions once, optionally forwarding completion.</summary>
         /// <param name="result">The completion result to forward, or <see langword="null"/> if disposing without signaling completion.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
         internal async ValueTask FinishAsync(Result? result)

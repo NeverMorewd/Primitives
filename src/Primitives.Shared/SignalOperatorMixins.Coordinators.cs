@@ -13,11 +13,7 @@ namespace ReactiveUI.Primitives;
 /// <summary>Coordinator helpers for multi-source signal operators.</summary>
 public static partial class LinqExtensions
 {
-    /// <summary>
-    /// Range-specialized WithLatest (Latch): emits each left range value paired with the right
-    /// range's final value. A dedicated signal avoids the closure, delegate, CreateSafe wrapper,
-    /// and safe-guard sink that <c>Signal.CreateSafe(observer =&gt; ...)</c> would allocate.
-    /// </summary>
+    /// <summary>Range-specialized WithLatest (Latch): emits each left range value paired with the right range's final value.</summary>
     /// <typeparam name="TResult">The result value type.</typeparam>
     /// <param name="left">The left source range.</param>
     /// <param name="right">The right source range.</param>
@@ -49,7 +45,7 @@ public static partial class LinqExtensions
         }
     }
 
-    /// <summary>Dedicated signal for <c>Race</c>; runs the coordinator without a Create closure.</summary>
+    /// <summary>Dedicated signal for <c>Race</c>, handing each subscription to a coordinator.</summary>
     /// <typeparam name="T">The value type.</typeparam>
     private sealed class RaceSignal<T> : IObservable<T>
     {
@@ -69,7 +65,7 @@ public static partial class LinqExtensions
         }
     }
 
-    /// <summary>Dedicated signal for <c>Zip</c>; runs the coordinator without a Create closure.</summary>
+    /// <summary>Dedicated signal for <c>Zip</c>, holding the two sources and the projection.</summary>
     /// <typeparam name="TLeft">The left value type.</typeparam>
     /// <typeparam name="TRight">The right value type.</typeparam>
     /// <typeparam name="TResult">The result value type.</typeparam>
@@ -96,7 +92,7 @@ public static partial class LinqExtensions
         }
     }
 
-    /// <summary>Dedicated signal for <c>CombineLatest</c>; runs the coordinator without a Create closure.</summary>
+    /// <summary>Dedicated signal for the two-source <c>CombineLatest</c> path.</summary>
     /// <typeparam name="TLeft">The left value type.</typeparam>
     /// <typeparam name="TRight">The right value type.</typeparam>
     /// <typeparam name="TResult">The result value type.</typeparam>
@@ -392,7 +388,7 @@ public static partial class LinqExtensions
         /// <summary>Handles completion of the outer sequence.</summary>
         private static void OnOuterCompleted()
         {
-            // Race completion is controlled by the first inner source to win.
+            // Only the winning source determines completion.
         }
     }
 
@@ -483,11 +479,7 @@ public static partial class LinqExtensions
             Drain();
         }
 
-        /// <summary>
-        /// Emits all currently available pairs. The gate is held across the projection and the
-        /// downstream callbacks so left and right threads cannot interleave emissions (the Rx
-        /// serialization contract) and completion is delivered at most once.
-        /// </summary>
+        /// <summary>Projects and emits queued pairs under the gate, preserving emission order.</summary>
         private void Drain()
         {
             lock (_gate)
@@ -562,11 +554,7 @@ public static partial class LinqExtensions
                 left.Subscribe(OnLeftNext, _observer.OnError, OnLeftCompleted),
                 right.Subscribe(OnRightNext, _observer.OnError, OnRightCompleted));
 
-        /// <summary>
-        /// Handles a left value. The gate is held across the projection and the downstream
-        /// callback so left and right threads cannot interleave emissions (the Rx serialization
-        /// contract).
-        /// </summary>
+        /// <summary>Handles a left value, holding the gate across the projection so emissions cannot interleave.</summary>
         /// <param name="value">The left value.</param>
         private void OnLeftNext(TLeft value)
         {

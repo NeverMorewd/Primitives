@@ -22,7 +22,7 @@ public sealed class ConnectableSignal<T> : IObservable<T>
     /// <summary>Multicast hub that receives source values.</summary>
     private readonly ISignal<T> _hub;
 
-    /// <summary>Active source connection slot. The returned connection handle owns disposal.</summary>
+    /// <summary>The active source connection, whose returned handle owns disposal.</summary>
     private StrongBox<Connection>? _connection;
 
     /// <summary>Set after the source sends a terminal notification to the hub.</summary>
@@ -43,7 +43,7 @@ public sealed class ConnectableSignal<T> : IObservable<T>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     private string DebuggerDisplay => ToString() ?? string.Empty;
 
-    /// <summary>Subscribes the hub to the source if it is not already connected.</summary>
+    /// <summary>Subscribes the hub to the source, returning the live handle when a connection is open.</summary>
     /// <returns>A handle that disconnects the source subscription.</returns>
     public IDisposable Connect()
     {
@@ -54,9 +54,6 @@ public sealed class ConnectableSignal<T> : IObservable<T>
                 return Scope.Empty;
             }
 
-            // Allocate the connection only on the first connect. A dedicated disposable type
-            // avoids the closure (and extra anonymous-disposable wrapper) that Scope.Create
-            // would allocate.
             if (_connection?.Value is { } activeConnection)
             {
                 return activeConnection;

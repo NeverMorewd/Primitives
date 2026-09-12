@@ -13,10 +13,6 @@ namespace ReactiveUI.Primitives.Advanced;
 /// <summary>Projects each source value to an inner observable and mirrors only the latest one.</summary>
 /// <typeparam name="TSource">The source element type.</typeparam>
 /// <typeparam name="TResult">The element type of the projected inner observables.</typeparam>
-/// <remarks>
-/// Fuses the projection into the switch: one object and one observer hop, where a projection followed by a
-/// separate switch costs two of each and an intermediate sequence of observables.
-/// </remarks>
 [System.Diagnostics.DebuggerDisplay("SwitchMapSignal: Source = {_source}, SkipNullSources = {_skipNullSources}")]
 public sealed class SwitchMapSignal<TSource, TResult> : IObservable<TResult>
 {
@@ -41,8 +37,8 @@ public sealed class SwitchMapSignal<TSource, TResult> : IObservable<TResult>
     /// <param name="source">The source whose values are projected to inner observables.</param>
     /// <param name="selector">Projects a source value to the inner observable to switch to.</param>
     /// <param name="skipNullSources">
-    /// Whether a null source value leaves the active inner subscription in place rather than switching. A caller
-    /// that projects null onto its own inner observable switches on it instead, which detaches the previous one.
+    /// Whether null source values retain the active subscription
+    /// without invoking the selector.
     /// </param>
     internal SwitchMapSignal(
         IObservable<TSource> source,

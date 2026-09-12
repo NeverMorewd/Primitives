@@ -19,22 +19,16 @@ public partial class ReactiveExtensionsTests
     /// <summary>String literal "initial" used by multiple tests.</summary>
     private const string InitialValueLiteral = "initial";
 
-    /// <summary>Stabilization window for scheduler-driven assertions.</summary>
-    private const int SchedulerStabilizeMilliseconds = 100;
-
     /// <summary>Value at which the <c>TakeUntil</c>/<c>WaitUntil</c> predicates trip.</summary>
     private const int PredicateThreshold = 5;
 
-    /// <summary>Hoisted source array used by tests (was inline literal).</summary>
+    /// <summary>Source values for string filtering tests.</summary>
     private static readonly string[] SequenceTest123HelloTest456World = ["test123", "hello", "test456", "world"];
 
     /// <summary>Expected sequence [1, 2, 3, 4, 5] for collection equality assertions.</summary>
     private static readonly int[] ExpectedSequence12345 = [1, 2, 3, 4, 5];
 
-    /// <summary>Longest a test waits for an asynchronous signal before failing.</summary>
-    private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(5);
-
-    /// <summary>Inactivity window long enough that a buffer can only be flushed by completion, never by a timeout.</summary>
+    /// <summary>The inactivity interval used with the virtual clock.</summary>
     private static readonly TimeSpan InactivityWindow = TimeSpan.FromSeconds(5);
 
     /// <summary>Syncronizes the asynchronous runs with asynchronous tasks in subscriptions.</summary>
@@ -42,7 +36,7 @@ public partial class ReactiveExtensionsTests
     [Test]
     public async Task SyncronizeAsync_RunsWithAsyncTasksInSubscriptions()
     {
-        // Given, When
+        // Each handler completes after updating the shared counters.
         var result = 0;
         var itterations = 0;
         Subject<bool> subject = new();
@@ -53,16 +47,8 @@ public partial class ReactiveExtensionsTests
         {
             try
             {
-                if (x.Value)
-                {
-                    await Task.Delay(LongDelayMilliseconds);
-                    _ = Interlocked.Increment(ref result);
-                }
-                else
-                {
-                    await Task.Delay(ShortDelayMilliseconds);
-                    _ = Interlocked.Decrement(ref result);
-                }
+                await Task.Yield();
+                _ = x.Value ? Interlocked.Increment(ref result) : Interlocked.Decrement(ref result);
             }
             finally
             {
@@ -78,13 +64,13 @@ public partial class ReactiveExtensionsTests
         subject.OnNext(true);
         subject.OnNext(false);
         await Task.WhenAll(tasks);
-        while (itterations < SampleValue6)
-        {
-            _ = Thread.Yield();
-        }
 
         // Then
-        await Assert.That(result).IsZero();
+        using (Assert.Multiple())
+        {
+            await Assert.That(Volatile.Read(ref result)).IsZero();
+            await Assert.That(Volatile.Read(ref itterations)).IsEqualTo(SampleValue6);
+        }
     }
 
     /// <summary>Tests OnNext with params.</summary>
@@ -121,10 +107,10 @@ public partial class ReactiveExtensionsTests
         await Assert.That(results).IsCollectionEqualTo(["test123", "test456"]);
     }
 
-    /// <summary>Tests Shuffle randomizes array.</summary>
+    /// <summary>Verifies Shuffle preserves every input element.</summary>
     /// <returns>A <see cref = "Task"/> representing the asynchronous test operation.</returns>
     [Test]
-    public async Task Shuffle_RandomizesArray()
+    public async Task Shuffle_PreservesInputElements()
     {
         const int SampleSize = 100;
         var original = Enumerable.Range(1, SampleSize).ToArray();
@@ -417,8 +403,7 @@ public partial class ReactiveExtensionsTests
         List<int> results2 = [];
         using var sub2 = replayed.Subscribe(results2.Add);
 
-        // Each subscriber gets its own replay hub seeded with the initial value, so a late subscriber
-        // observes that initial value rather than values delivered to earlier subscribers.
+        // Each subscriber receives its own replay hub and initial value.
         await Assert.That(results2).IsCollectionEqualTo([SampleValue99]);
         subject.OnNext(SampleValue2);
         using (Assert.Multiple())
@@ -490,9 +475,9 @@ public partial class ReactiveExtensionsTests
             });
         subject.OnNext(1);
         subject.OnNext(SampleValue2);
-        await allReceived.Task.WaitAsync(WaitTimeout);
+        await allReceived.Task;
         subject.OnCompleted();
-        await completionSource.Task.WaitAsync(WaitTimeout);
+        await completionSource.Task;
         using (Assert.Multiple())
         {
             await Assert.That(results).IsCollectionEqualTo([1, SampleValue2]);
@@ -592,9 +577,10 @@ public partial class ReactiveExtensionsTests
             observer.OnError(failure);
             return EmptyDisposable.Instance;
         });
-        using var sub = source.OnErrorRetry<int, NotSupportedException>(caught.Add, 1, TimeSpan.Zero, Sequencer.Default)
+        VirtualClock scheduler = new();
+        using var sub = source.OnErrorRetry<int, NotSupportedException>(caught.Add, 1, TimeSpan.Zero, scheduler)
             .Subscribe(values.Add, static _ => { });
-        await Task.Delay(TimeSpan.FromMilliseconds(SchedulerStabilizeMilliseconds));
+        scheduler.AdvanceBy(1);
         await Assert.That(caught).IsEmpty();
         await Assert.That(values.Count).IsGreaterThanOrEqualTo(1);
     }
@@ -624,9 +610,9 @@ public partial class ReactiveExtensionsTests
             return EmptyDisposable.Instance;
         });
         const int MaxRetries = 3;
-        using var sub = source.RetryWithBackoff(MaxRetries, TimeSpan.FromMilliseconds(1))
+        using var sub = source.RetryWithBackoff(MaxRetries, TimeSpan.Zero)
             .Subscribe(values.Add, () => done.TrySetResult(values));
-        var captured = await done.Task.WaitAsync(WaitTimeout);
+        var captured = await done.Task;
         await Assert.That(captured).IsCollectionEqualTo([SuccessAttempt]);
     }
 
@@ -639,17 +625,18 @@ public partial class ReactiveExtensionsTests
     /// <summary>Verifies the two-argument <c>BufferUntilInactive</c> overload flushes a buffer on completion using the default scheduler.</summary>
     /// <returns>A <see cref = "Task"/> representing the asynchronous test operation.</returns>
     [Test]
-    public async Task WhenBufferUntilInactiveTwoArgOverload_ThenFlushesBufferOnCompletion()
+    public async Task WhenBufferUntilInactiveSourceCompletes_ThenFlushesBuffer()
     {
         Subject<int> subject = new();
         List<IList<int>> results = [];
         TaskCompletionSource completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var sub = subject.BufferUntilInactive(InactivityWindow)
+        VirtualClock scheduler = new();
+        using var sub = subject.BufferUntilInactive(InactivityWindow, scheduler)
             .Subscribe(results.Add, () => completed.TrySetResult());
         subject.OnNext(1);
         subject.OnNext(SampleValue2);
         subject.OnCompleted();
-        await completed.Task.WaitAsync(WaitTimeout);
+        await completed.Task;
         await Assert.That(results.Count).IsGreaterThanOrEqualTo(1);
         await Assert.That(results[^1]).IsCollectionEqualTo([1, SampleValue2]);
     }
@@ -785,11 +772,7 @@ public partial class ReactiveExtensionsTests
         } = string.Empty;
     }
 
-    /// <summary>INPC owner whose property type lets us pass a non-member expression body
-    /// (e.g. a literal arithmetic expression) into <c>ToPropertyObservable</c> so the
-    /// <c>as MemberExpression ?? throw</c> guard fires. The <c>PropertyChanged</c> event is
-    /// required by the interface but never raised — the guard short-circuits before
-    /// subscription wiring runs.</summary>
+    /// <summary>Provides a notification owner for rejecting non-member property expressions.</summary>
     private sealed class ToPropertyNonMemberOwner : INotifyPropertyChanged
     {
         /// <inheritdoc/>

@@ -4,10 +4,7 @@
 
 namespace ReactiveUI.Primitives.Extensions.Operators;
 
-/// <summary>
-/// Takes elements from the source sequence until a predicate returns true for an element.
-/// The element that satisfies the predicate is included in the sequence.
-/// </summary>
+/// <summary>Emits values through the first predicate match and completes, terminating before emission if the predicate throws.</summary>
 /// <typeparam name="T">The type of elements in the source sequence.</typeparam>
 /// <param name="source">The source observable.</param>
 /// <param name="predicate">The predicate to determine when to stop taking elements.</param>
@@ -25,7 +22,7 @@ public sealed class TakeUntilInclusiveObservable<T>(
         return source.Subscribe(new TakeUntilInclusiveWitness(observer, predicate));
     }
 
-    /// <summary>The observer for the <see cref="TakeUntilInclusiveObservable{T}"/>.</summary>
+    /// <summary>Observer that completes the sequence right after forwarding the first element the predicate accepts.</summary>
     /// <param name="downstream">The downstream observer.</param>
     /// <param name="predicate">The predicate to determine when to stop taking elements.</param>
     private sealed class TakeUntilInclusiveWitness(
@@ -39,7 +36,7 @@ public sealed class TakeUntilInclusiveObservable<T>(
         private bool _done;
 
         /// <inheritdoc/>
-        /// <param name="value">The value.</param>
+        /// <param name="value">The value to forward.</param>
         public void OnNext(T value)
         {
             lock (_gate)

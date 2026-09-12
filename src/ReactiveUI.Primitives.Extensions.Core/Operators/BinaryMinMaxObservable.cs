@@ -7,11 +7,12 @@ using ReactiveUI.Primitives.Disposables;
 
 namespace ReactiveUI.Primitives.Extensions.Operators;
 
-/// <summary>Fast path for the common two-source min/max case.</summary>
+/// <summary>Emits the larger or smaller latest value after both sources have emitted.</summary>
 /// <typeparam name="T">The value type.</typeparam>
 /// <param name="left">The first source.</param>
 /// <param name="right">The second source.</param>
 /// <param name="emitMaximum"><c>true</c> to emit the maximum; <c>false</c> to emit the minimum.</param>
+/// <remarks>An error terminates immediately; successful completion waits for both sources unless one completes without emitting.</remarks>
 [System.Diagnostics.DebuggerDisplay("BinaryMinMaxObservable: Left = {_left}, Right = {_right}")]
 public sealed class BinaryMinMaxObservable<T>(IObservable<T> left, IObservable<T> right, bool emitMaximum) : IObservable<T>
     where T : struct, IComparable<T>
@@ -62,9 +63,9 @@ public sealed class BinaryMinMaxObservable<T>(IObservable<T> left, IObservable<T
         /// <summary>Whether the sink is terminal.</summary>
         private bool _isDone;
 
-        /// <summary>Handles a source value.</summary>
+        /// <summary>Records one side's latest value and emits the winning comparison once both sides have a value.</summary>
         /// <param name="isLeft"><c>true</c> for the left source.</param>
-        /// <param name="value">The value.</param>
+        /// <param name="value">That side's latest value.</param>
         public void OnNext(bool isLeft, T value)
         {
             lock (_gate)
@@ -96,7 +97,7 @@ public sealed class BinaryMinMaxObservable<T>(IObservable<T> left, IObservable<T
             }
         }
 
-        /// <summary>Handles a source error.</summary>
+        /// <summary>Forwards the first error downstream and marks the sink terminal.</summary>
         /// <param name="error">The error.</param>
         public void OnError(Exception error)
         {
@@ -112,7 +113,7 @@ public sealed class BinaryMinMaxObservable<T>(IObservable<T> left, IObservable<T
             }
         }
 
-        /// <summary>Handles source completion.</summary>
+        /// <summary>Records one side's completion, completing downstream when both sides finish or when this side never emitted.</summary>
         /// <param name="isLeft"><c>true</c> for the left source.</param>
         public void OnCompleted(bool isLeft)
         {
@@ -159,7 +160,7 @@ public sealed class BinaryMinMaxObservable<T>(IObservable<T> left, IObservable<T
             }
         }
 
-        /// <summary>Completes once.</summary>
+        /// <summary>Marks the sink terminal and completes the downstream observer.</summary>
         private void Complete()
         {
             _isDone = true;
@@ -167,7 +168,7 @@ public sealed class BinaryMinMaxObservable<T>(IObservable<T> left, IObservable<T
         }
     }
 
-    /// <summary>Observer that labels left/right without per-callback closures.</summary>
+    /// <summary>Observer that forwards notifications to the shared sink tagged with the side it came from.</summary>
     /// <param name="sink">The shared sink.</param>
     /// <param name="isLeft"><c>true</c> when observing the left source.</param>
     private sealed class IndexedWitness(Sink sink, bool isLeft) : IObserver<T>

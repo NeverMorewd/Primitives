@@ -23,7 +23,7 @@ public sealed class ExpireCoordinatorTests
     /// <summary>A gap shorter than <see cref="DueTicks"/> that must not expire the timeout.</summary>
     private const int ActiveGapTicks = 9;
 
-    /// <summary>A gap shorter than <see cref="DueTicks"/> after which a value still arrives in time.</summary>
+    /// <summary>A gap shorter than <see cref="DueTicks"/> after which a value arrives in time.</summary>
     private const int ShortGapTicks = 5;
 
     /// <summary>The values forwarded by the active-source re-arming test.</summary>
@@ -51,7 +51,7 @@ public sealed class ExpireCoordinatorTests
         await Assert.That(values.SequenceEqual(ExpectedActiveValues)).IsTrue();
     }
 
-    /// <summary>Verifies silence longer than the timeout still expires after re-arming.</summary>
+    /// <summary>Verifies silence longer than the timeout expires the sequence after re-arming.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task TimeoutExpiresWhenSilenceExceedsDueTimeAfterAValue()
@@ -115,13 +115,7 @@ public sealed class ExpireCoordinatorTests
         await Assert.That(errors.SequenceEqual([nameof(InvalidOperationException)])).IsTrue();
     }
 
-    /// <summary>
-    /// Verifies a value that arrives after the inactivity window closed expires the sequence even though the armed
-    /// timeout has not been dispatched yet. The timeout runs on the sequencer, and a thread-pool sequencer whose pool
-    /// is saturated can dispatch it arbitrarily late while a source ticking on its own thread keeps producing. The
-    /// window is a property of the clock, not of whether the timer callback has been given a thread, so a value that
-    /// missed it must not reach the observer.
-    /// </summary>
+    /// <summary>A value after the inactivity deadline expires the sequence even when the timeout callback remains queued.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task ValueArrivingAfterTheWindowClosedExpiresWhileTheTimeoutIsStillUndispatched()
@@ -141,10 +135,7 @@ public sealed class ExpireCoordinatorTests
         await Assert.That(errors.SequenceEqual([nameof(TimeoutException)])).IsTrue();
     }
 
-    /// <summary>
-    /// Verifies the deadline check does not expire a value that is still inside its window. This is the guard against
-    /// the previous test's fix over-firing: an undispatched timeout must not turn an on-time value into a timeout.
-    /// </summary>
+    /// <summary>A value inside the inactivity window is forwarded while its timeout callback remains queued.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task ValueArrivingInsideTheWindowIsForwardedWhileTheTimeoutIsStillUndispatched()
@@ -180,11 +171,7 @@ public sealed class ExpireCoordinatorTests
         await Assert.That(observer.Values).IsEqualTo(One);
     }
 
-    /// <summary>
-    /// A sequencer that accepts scheduled work and never dispatches it, modelling a thread-pool sequencer whose pool
-    /// is saturated: the timer becomes due on the clock, but no thread is free to run the callback. Its clock is
-    /// driven by the test.
-    /// </summary>
+    /// <summary>Tracks virtual time and accepts work without dispatching it.</summary>
     /// <param name="start">The instant the clock starts at.</param>
     private sealed class UndispatchedSequencer(DateTimeOffset start) : ISequencer
     {
@@ -211,15 +198,11 @@ public sealed class ExpireCoordinatorTests
         [System.Diagnostics.CodeAnalysis.SuppressMessage(
             "Design",
             "SST2318:Members should not have identical bodies",
-            Justification =
-                "The relative and absolute Schedule overloads of this test-double sequencer intentionally behave the "
-                + "same way; both are required by the ISequencer contract and, as distinct interface overloads, cannot "
-                + "forward to one another.")]
+            Justification = "Distinct interface overloads cannot forward to one another.")]
         public void Schedule(IWorkItem item, long dueTimestamp) => Pending++;
     }
 
-    /// <summary>Observer that makes the armed timeout due from inside <see cref="OnNext"/>, so the timeout is
-    /// dispatched while the value is still in flight.</summary>
+    /// <summary>Observer that makes the armed timeout due from inside <see cref="OnNext"/>.</summary>
     /// <param name="clock">The clock that dispatches due work inline.</param>
     /// <param name="dueTime">The amount to advance the clock by so the armed timeout becomes due.</param>
     private sealed class ReentrantTimeoutObserver(VirtualClock clock, TimeSpan dueTime) : IObserver<int>

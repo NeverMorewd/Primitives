@@ -5,10 +5,6 @@
 namespace ReactiveUI.Primitives.Async;
 
 /// <summary>Provides Throttle (debounce) extension methods for asynchronous observable sequences.</summary>
-/// <remarks>Throttle ignores elements from the source sequence that are followed by another element
-/// within a specified time span. Only values that are not followed by another value within the due time
-/// are forwarded to observers. This is commonly used to suppress rapid bursts of events such as keystrokes
-/// or mouse movements.</remarks>
 public static partial class SignalAsyncExtensions
 {
     /// <summary>Throttle (debounce) operators for an observable source sequence.</summary>
@@ -16,10 +12,7 @@ public static partial class SignalAsyncExtensions
     /// <param name="source">The source observable sequence.</param>
     extension<T>(IObservableAsync<T> source)
     {
-        /// <summary>
-        /// Ignores elements from the source sequence that are followed by another element within
-        /// the specified time span. Only the last element in each burst is forwarded.
-        /// </summary>
+        /// <summary>Forwards the latest element after a full quiet period.</summary>
         /// <param name="dueTime">The time span that must elapse after the last element before it is forwarded.
         /// Must be non-negative.</param>
         /// <returns>An observable sequence containing only those elements that are not followed by another
@@ -32,10 +25,7 @@ public static partial class SignalAsyncExtensions
             return new ThrottleSignal<T>(source, dueTime, TimeProvider.System);
         }
 
-        /// <summary>
-        /// Ignores elements from the source sequence that are followed by another element within
-        /// the specified time span. Only the last element in each burst is forwarded.
-        /// </summary>
+        /// <summary>Forwards the latest element after a full quiet period.</summary>
         /// <param name="dueTime">The time span that must elapse after the last element before it is forwarded.
         /// Must be non-negative.</param>
         /// <param name="timeProvider">An optional time provider for controlling timing. If null, <see cref="TimeProvider.System"/>
@@ -55,29 +45,27 @@ public static partial class SignalAsyncExtensions
     /// <param name="delay">The duration to delay.</param>
     extension(TimeSpan delay)
     {
-        /// <summary>Asynchronously delays for the specified duration using the provided time provider.</summary>
+        /// <summary>Creates a cancellable delay using the supplied time provider.</summary>
         /// <param name="timeProvider">The time provider to use for the delay.</param>
         /// <param name="cancellationToken">A token to cancel the delay.</param>
         /// <returns>A <see cref="ValueTask"/> that completes after the specified delay.</returns>
-        /// <remarks>
-        /// For <see cref="TimeProvider.System"/> the result is a wrapper around
-        /// <see cref="Task.Delay(TimeSpan, CancellationToken)"/>; for custom providers the call rents a
-        /// pooled <see cref="PooledDelaySource"/> so the per-call <see cref="TaskCompletionSource{TResult}"/>
-        /// + <see cref="Task{TResult}"/> + <see cref="CancellationTokenRegistration"/> allocation chain
-        /// from the legacy implementation collapses to zero on the steady path.
-        /// </remarks>
         internal ValueTask DelayAsync(
             TimeProvider timeProvider,
             CancellationToken cancellationToken) =>
             timeProvider == TimeProvider.System
-                ? new(Task.Delay(delay, cancellationToken))
+                ? DelayOnSystemClockAsync(delay, cancellationToken)
                 : PooledDelaySource.Rent().BeginAsync(delay, timeProvider, cancellationToken);
     }
 
-    /// <summary>
-    /// Async observable that debounces the source sequence, only forwarding elements that are not
-    /// followed by another element within the specified due time.
-    /// </summary>
+    /// <summary>Waits for the system clock or cancellation.</summary>
+    /// <param name="delay">The duration to wait.</param>
+    /// <param name="cancellationToken">Cancellation for the wait.</param>
+    /// <returns>The delay operation.</returns>
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+    private static ValueTask DelayOnSystemClockAsync(TimeSpan delay, CancellationToken cancellationToken) =>
+        new(Task.Delay(delay, cancellationToken));
+
+    /// <summary>Async observable that debounces the source sequence, only forwarding elements that are not followed by another element within the specified due time.</summary>
     /// <typeparam name="T">The type of elements in the sequence.</typeparam>
     /// <param name="source">The source observable sequence to throttle.</param>
     /// <param name="dueTime">The quiet period that must elapse before an element is forwarded.</param>
@@ -96,10 +84,7 @@ public static partial class SignalAsyncExtensions
             return source.SubscribeAsync(throttleObserver, cancellationToken);
         }
 
-        /// <summary>
-        /// Observer that implements throttle/debounce logic by starting a timer on each element
-        /// and only forwarding the element if no newer element supersedes it before the timer fires.
-        /// </summary>
+        /// <summary>Delays each value and forwards it only if no newer value supersedes it.</summary>
         /// <param name="observer">The downstream observer to forward debounced elements to.</param>
         /// <param name="dueTime">The quiet period that must elapse before an element is forwarded.</param>
         /// <param name="timeProvider">The time provider used for scheduling the debounce timer.</param>
@@ -110,6 +95,21 @@ public static partial class SignalAsyncExtensions
 
             /// <summary>A monotonically increasing identifier used to detect whether a newer element has superseded the current timer.</summary>
             private long _id;
+
+            /// <summary>Starts a debounce delay with a fresh identifier.</summary>
+            /// <param name="value">The value to forward if it remains current.</param>
+            /// <param name="cancellationToken">Cancellation for the delay.</param>
+            /// <returns>The delay and notification operation.</returns>
+            internal Task StartDelayAsync(T value, CancellationToken cancellationToken)
+            {
+                long currentId;
+                lock (_gate)
+                {
+                    currentId = ++_id;
+                }
+
+                return FireAfterDelayAsync(value, currentId, cancellationToken);
+            }
 
             /// <summary>Waits for the debounce delay and then forwards the value if it has not been superseded.</summary>
             /// <param name="value">The value to forward after the delay.</param>
@@ -134,32 +134,17 @@ public static partial class SignalAsyncExtensions
                 }
                 catch (Exception e)
                 {
-                    // UnhandledExceptionHandler filters OperationCanceledException internally so
-                    // a separate OCE-only catch would just duplicate the silent-drop behavior.
                     UnhandledExceptionHandler.ReportUnhandledException(e);
                 }
             }
 
-            /// <summary>
-            /// Starts a new debounce timer for the received element, identifying it by a fresh id.
-            /// Supersession is detected post-delay via the id check rather than via a per-emission
-            /// linked CTS — eliminating the <c>Linked1CancellationTokenSource</c> allocation that
-            /// dominated the operator's GC profile. A superseded delay still runs to completion
-            /// (waiting the full <c>dueTime</c>) but its result is discarded, which trades a small
-            /// amount of transient state-machine retention for zero per-emission allocation.
-            /// </summary>
+            /// <summary>Schedules the value's delay and discards completion if a newer value supersedes it.</summary>
             /// <param name="value">The element to potentially forward after the debounce period.</param>
             /// <param name="cancellationToken">A token to cancel the operation.</param>
             /// <returns>A completed task; the actual forwarding happens asynchronously after the delay.</returns>
             protected override ValueTask OnNextAsyncCore(T value, CancellationToken cancellationToken)
             {
-                long currentId;
-                lock (_gate)
-                {
-                    currentId = ++_id;
-                }
-
-                _ = FireAfterDelayAsync(value, currentId, cancellationToken);
+                _ = StartDelayAsync(value, cancellationToken);
                 return default;
             }
 
@@ -190,10 +175,7 @@ public static partial class SignalAsyncExtensions
                 return observer.OnCompletedAsync(result);
             }
 
-            /// <summary>
-            /// Marks any in-flight delay as superseded during disposal. The dispose token threaded
-            /// through <see cref="DelayAsync"/> by the base observer also unblocks the awaits.
-            /// </summary>
+            /// <summary>Invalidates pending values before releasing the observer.</summary>
             /// <returns>A completed task.</returns>
             protected override ValueTask DisposeAsyncCore()
             {

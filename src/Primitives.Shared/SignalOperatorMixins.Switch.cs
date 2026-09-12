@@ -11,29 +11,9 @@ namespace ReactiveUI.Primitives;
 /// <summary>The Switch operator: subscribes to the most recent inner sequence and drops the previous one.</summary>
 public static partial class LinqExtensions
 {
-    /// <summary>Dedicated signal for <c>SwitchTo</c>; runs the coordinator without a Create closure.</summary>
-    /// <typeparam name="T">The value type.</typeparam>
-    private sealed class SwitchSignal<T> : IObservable<T>
-    {
-        /// <summary>The outer sequence of inner sources.</summary>
-        private readonly IObservable<IObservable<T>> _sources;
-
-        /// <summary>Initializes a new instance of the <see cref="SwitchSignal{T}"/> class.</summary>
-        /// <param name="sources">The outer sequence of inner sources.</param>
-        internal SwitchSignal(IObservable<IObservable<T>> sources) => _sources = sources;
-
-        /// <inheritdoc/>
-        public IDisposable Subscribe(IObserver<T> observer)
-        {
-            ArgumentExceptionHelper.ThrowIfNull(observer);
-
-            return new SwitchCoordinator<T>(observer).Run(_sources);
-        }
-    }
-
     /// <summary>Coordinates a switch operation.</summary>
     /// <typeparam name="T">The source value type.</typeparam>
-    private sealed class SwitchCoordinator<T> : IDisposable
+    internal sealed class SwitchCoordinator<T> : IDisposable
     {
         /// <summary>The synchronization gate.</summary>
         private readonly Lock _gate = new();
@@ -63,6 +43,9 @@ public static partial class LinqExtensions
         /// <param name="observer">The downstream observer.</param>
         internal SwitchCoordinator(IObserver<T> observer) => _observer = observer;
 
+        /// <summary>Gets the gate serializing switches and downstream notifications.</summary>
+        internal Lock Gate => _gate;
+
         /// <summary>Releases the active subscriptions.</summary>
         public void Dispose()
         {
@@ -80,33 +63,29 @@ public static partial class LinqExtensions
             return this;
         }
 
-        /// <summary>Switches to a new inner source.</summary>
-        /// <param name="source">The new inner source.</param>
-        private void OnSource(IObservable<T> source)
+        /// <summary>Activates the next inner generation unless a terminal notification has been sent.</summary>
+        /// <param name="version">The activated generation, or zero when the coordinator is done.</param>
+        /// <returns>True when an inner generation was activated; otherwise, false.</returns>
+        internal bool TryBeginSource(out int version)
         {
-            int current;
             lock (_gate)
             {
                 if (_done)
                 {
-                    return;
+                    version = 0;
+                    return false;
                 }
 
-                current = _version + 1;
+                version = _version + 1;
 
-                // Publish the new version so readers in gated operations observe it.
-                Volatile.Write(ref _version, current);
+                Volatile.Write(ref _version, version);
                 _innerActive = true;
+                return true;
             }
-
-            _innerSlot.Create(source.Subscribe(
-                value => OnNext(current, value),
-                error => OnError(current, error),
-                () => OnCompleted(current)));
         }
 
         /// <summary>Marks the outer source as complete.</summary>
-        private void OnOuterCompleted()
+        internal void OnOuterCompleted()
         {
             lock (_gate)
             {
@@ -122,7 +101,7 @@ public static partial class LinqExtensions
 
         /// <summary>Forwards an outer source error once.</summary>
         /// <param name="error">The error to forward.</param>
-        private void OnOuterError(Exception error)
+        internal void OnOuterError(Exception error)
         {
             lock (_gate)
             {
@@ -139,7 +118,7 @@ public static partial class LinqExtensions
         /// <summary>Forwards an inner value when it belongs to the current source.</summary>
         /// <param name="version">The inner version.</param>
         /// <param name="value">The value to forward.</param>
-        private void OnNext(int version, T value)
+        internal void OnNext(int version, T value)
         {
             lock (_gate)
             {
@@ -155,7 +134,7 @@ public static partial class LinqExtensions
         /// <summary>Forwards an inner error when it belongs to the current source.</summary>
         /// <param name="version">The inner version.</param>
         /// <param name="error">The error to forward.</param>
-        private void OnError(int version, Exception error)
+        internal void OnError(int version, Exception error)
         {
             lock (_gate)
             {
@@ -171,7 +150,7 @@ public static partial class LinqExtensions
 
         /// <summary>Completes an inner source when it belongs to the current source.</summary>
         /// <param name="version">The inner version.</param>
-        private void OnCompleted(int version)
+        internal void OnCompleted(int version)
         {
             lock (_gate)
             {
@@ -185,6 +164,21 @@ public static partial class LinqExtensions
             }
         }
 
+        /// <summary>Switches to a new inner source.</summary>
+        /// <param name="source">The new inner source.</param>
+        private void OnSource(IObservable<T> source)
+        {
+            if (!TryBeginSource(out var current))
+            {
+                return;
+            }
+
+            _innerSlot.Create(source.Subscribe(
+                value => OnNext(current, value),
+                error => OnError(current, error),
+                () => OnCompleted(current)));
+        }
+
         /// <summary>Completes the observer when both outer and inner sources are complete.</summary>
         private void TryComplete()
         {
@@ -195,6 +189,26 @@ public static partial class LinqExtensions
 
             _done = true;
             _observer.OnCompleted();
+        }
+    }
+
+    /// <summary>Dedicated signal for <c>SwitchTo</c> that hands each subscription to a coordinator.</summary>
+    /// <typeparam name="T">The value type.</typeparam>
+    private sealed class SwitchSignal<T> : IObservable<T>
+    {
+        /// <summary>The outer sequence of inner sources.</summary>
+        private readonly IObservable<IObservable<T>> _sources;
+
+        /// <summary>Initializes a new instance of the <see cref="SwitchSignal{T}"/> class.</summary>
+        /// <param name="sources">The outer sequence of inner sources.</param>
+        internal SwitchSignal(IObservable<IObservable<T>> sources) => _sources = sources;
+
+        /// <inheritdoc/>
+        public IDisposable Subscribe(IObserver<T> observer)
+        {
+            ArgumentExceptionHelper.ThrowIfNull(observer);
+
+            return new SwitchCoordinator<T>(observer).Run(_sources);
         }
     }
 }

@@ -4,13 +4,7 @@
 
 namespace ReactiveUI.Primitives.Async;
 
-/// <summary>
-/// Provides extension methods for working with asynchronous observable sequences, enabling operations such as
-/// suppressing consecutive duplicate elements.
-/// </summary>
-/// <remarks>The methods in this class allow developers to filter out consecutive duplicates in observable
-/// sequences, either by value or by a specified key. These operations are useful for scenarios where only changes or
-/// distinct consecutive values are of interest, such as event streams or state change notifications.</remarks>
+/// <summary>Provides extension methods for working with asynchronous observable sequences, enabling operations such as suppressing consecutive duplicate elements.</summary>
 public static partial class SignalAsyncExtensions
 {
     /// <summary>Consecutive-distinctness operators for an observable source sequence.</summary>
@@ -18,15 +12,10 @@ public static partial class SignalAsyncExtensions
     /// <param name="source">The source observable sequence.</param>
     extension<T>(IObservableAsync<T> source)
     {
-        /// <summary>
-        /// Returns an observable sequence that emits only distinct consecutive elements, suppressing duplicates that
-        /// are equal to the previous element.
-        /// </summary>
+        /// <summary>Returns an observable sequence that emits only distinct consecutive elements, suppressing duplicates that are equal to the previous element.</summary>
         /// <returns>An observable sequence that contains only the elements from the source sequence that are not equal to their
         /// immediate predecessor.</returns>
-        /// <remarks>Elements are compared using the default equality comparer for the type <typeparamref
-        /// name="T"/>. Only consecutive duplicate elements are suppressed; non-consecutive duplicates are not
-        /// affected.</remarks>
+        /// <remarks>Uses the default equality comparer.</remarks>
         public IObservableAsync<T> Unique()
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -42,9 +31,6 @@ public static partial class SignalAsyncExtensions
         /// <returns>An observable sequence that contains only distinct consecutive elements from the source sequence, as
         /// determined by the specified equality comparer.</returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="equalityComparer"/> is <see langword="null"/>.</exception>
-        /// <remarks>Use this method to suppress consecutive duplicate elements in the sequence. Only
-        /// elements that differ from their immediate predecessor, according to the provided comparer, are emitted to
-        /// observers.</remarks>
         public IObservableAsync<T> Unique(IEqualityComparer<T> equalityComparer)
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -53,17 +39,12 @@ public static partial class SignalAsyncExtensions
             return new UniqueSignal<T>(source, equalityComparer);
         }
 
-        /// <summary>
-        /// Returns an observable sequence that emits elements from the source sequence, suppressing consecutive
-        /// duplicates as determined by a key selector function.
-        /// </summary>
+        /// <summary>Returns an observable sequence that emits elements from the source sequence, suppressing consecutive duplicates as determined by a key selector function.</summary>
         /// <typeparam name="TKey">The type of the key used to determine whether consecutive elements are considered duplicates.</typeparam>
         /// <param name="keySelector">A function that extracts the comparison key from each element in the source sequence.</param>
         /// <returns>An observable sequence that contains only the elements from the source sequence that are not consecutive
         /// duplicates according to the specified key.</returns>
-        /// <remarks>The comparison of keys uses the default equality comparer for the type <typeparamref
-        /// name="TKey"/>. Only consecutive duplicate elements are suppressed; non-consecutive duplicates are not
-        /// affected.</remarks>
+        /// <remarks>Compares keys with the default equality comparer.</remarks>
         public IObservableAsync<T> UniqueBy<TKey>(Func<T, TKey> keySelector)
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -72,19 +53,13 @@ public static partial class SignalAsyncExtensions
             return new UniqueBySignal<T, TKey>(source, keySelector, EqualityComparer<TKey>.Default);
         }
 
-        /// <summary>
-        /// Returns an observable sequence that emits elements from the source sequence, suppressing consecutive
-        /// duplicates as determined by a key selector and equality comparer.
-        /// </summary>
+        /// <summary>Returns an observable sequence that emits elements from the source sequence, suppressing consecutive duplicates as determined by a key selector and equality comparer.</summary>
         /// <typeparam name="TKey">The type of the key used to determine whether consecutive elements are considered duplicates.</typeparam>
         /// <param name="keySelector">A function that extracts the comparison key from each element in the source sequence.</param>
         /// <param name="equalityComparer">An equality comparer used to compare keys for equality.</param>
         /// <returns>An observable sequence that contains only the elements from the source sequence that are not consecutive
         /// duplicates according to the specified key and comparer.</returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="keySelector"/> or <paramref name="equalityComparer"/> is null.</exception>
-        /// <remarks>The first element in the sequence is always emitted. Subsequent elements are emitted
-        /// only if their key, as determined by <paramref name="keySelector"/>, is not equal to the key of the
-        /// immediately preceding element, as determined by <paramref name="equalityComparer"/>.</remarks>
         public IObservableAsync<T> UniqueBy<TKey>(
             Func<T, TKey> keySelector,
             IEqualityComparer<TKey> equalityComparer)
@@ -97,10 +72,7 @@ public static partial class SignalAsyncExtensions
         }
     }
 
-    /// <summary>
-    /// Single-observer-layer <c>DistinctUntilChanged</c>. Replaces the previous \c Create + async-lambda + closure
-    /// pattern; per-subscription state lives in observer fields.
-    /// </summary>
+    /// <summary>Drops each value that the comparer judges equal to the most-recently-forwarded one.</summary>
     /// <typeparam name="T">The element type.</typeparam>
     /// <param name="source">The upstream observable.</param>
     /// <param name="comparer">The equality comparer used to detect duplicates.</param>
@@ -132,7 +104,7 @@ public static partial class SignalAsyncExtensions
             IEqualityComparer<T> comparer,
             CancellationToken subscribeToken) : WitnessAsync<T>(subscribeToken)
         {
-            /// <summary>The previously-forwarded value; valid only when <see cref="_hasPrevious"/> is set.</summary>
+            /// <summary>The most-recently-forwarded value; valid only when <see cref="_hasPrevious"/> is set.</summary>
             private T? _previous;
 
             /// <summary>Latches to <see langword="true"/> after the first emission has been forwarded.</summary>
@@ -161,10 +133,7 @@ public static partial class SignalAsyncExtensions
         }
     }
 
-    /// <summary>
-    /// Single-observer-layer <c>DistinctUntilChangedBy</c>; key is extracted once per emission and compared
-    /// against the most-recently-forwarded key.
-    /// </summary>
+    /// <summary>Single-observer-layer <c>DistinctUntilChangedBy</c>; key is extracted once per emission and compared against the most-recently-forwarded key.</summary>
     /// <typeparam name="T">The element type.</typeparam>
     /// <typeparam name="TKey">The key type.</typeparam>
     /// <param name="source">The upstream observable.</param>
@@ -203,7 +172,7 @@ public static partial class SignalAsyncExtensions
             IEqualityComparer<TKey> comparer,
             CancellationToken subscribeToken) : WitnessAsync<T>(subscribeToken)
         {
-            /// <summary>The previously-forwarded key; valid only when <see cref="_hasPrevious"/> is set.</summary>
+            /// <summary>The most-recently-forwarded key; valid only when <see cref="_hasPrevious"/> is set.</summary>
             private TKey? _previousKey;
 
             /// <summary>Latches to <see langword="true"/> after the first emission has been forwarded.</summary>

@@ -34,14 +34,8 @@ public sealed class AsyncEnumerableSignal<T> : IAsyncEnumerableBackedSignal<T>
         return subscription;
     }
 
-    /// <summary>Drives a single subscription's pump and coordinates single-owner enumerator disposal.</summary>
-    /// <remarks>
-    /// Enumerator disposal is single-owner via an interlocked claim: whichever of the pump's
-    /// <c>finally</c> and <see cref="Dispose"/> wins disposes the enumerator exactly once. The disposer
-    /// disposes immediately when it wins, so a non-cooperative enumerator (one that ignores cancellation
-    /// in <see cref="IAsyncEnumerator{T}.MoveNextAsync"/>) is still torn down promptly without waiting on it.
-    /// </remarks>
-    private sealed class Subscription : IDisposable
+    /// <summary>Pumps values and disposes the enumerator once without waiting for a pending move.</summary>
+    internal sealed class Subscription : IDisposable
     {
         /// <summary>The downstream observer.</summary>
         private readonly IObserver<T> _observer;
@@ -65,7 +59,7 @@ public sealed class AsyncEnumerableSignal<T> : IAsyncEnumerableBackedSignal<T>
         /// <param name="observer">The downstream observer.</param>
         /// <param name="values">The source async enumerable.</param>
         /// <param name="cancellationToken">The adapter cancellation token.</param>
-        public Subscription(IObserver<T> observer, IAsyncEnumerable<T> values, CancellationToken cancellationToken)
+        internal Subscription(IObserver<T> observer, IAsyncEnumerable<T> values, CancellationToken cancellationToken)
         {
             _observer = observer;
             _values = values;
@@ -73,9 +67,6 @@ public sealed class AsyncEnumerableSignal<T> : IAsyncEnumerableBackedSignal<T>
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                 : new();
         }
-
-        /// <summary>Starts the asynchronous pump.</summary>
-        public void Start() => _ = PumpAsync();
 
         /// <inheritdoc/>
         public void Dispose()
@@ -85,18 +76,7 @@ public sealed class AsyncEnumerableSignal<T> : IAsyncEnumerableBackedSignal<T>
                 return;
             }
 
-            try
-            {
-                _cts.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-                // The pump already completed and disposed the cancellation source.
-            }
-
-            // Dispose the enumerator immediately when this path wins ownership, rather than waiting
-            // on MoveNextAsync, so a non-cooperative enumerator (one that ignores cancellation) is
-            // still torn down promptly. The pump's finally disposes it only if it wins the race.
+            _cts.Cancel();
             if (TryClaimEnumerator(out var enumerator))
             {
                 FireAndForgetDispose(enumerator);
@@ -105,15 +85,57 @@ public sealed class AsyncEnumerableSignal<T> : IAsyncEnumerableBackedSignal<T>
             _cts.Dispose();
         }
 
+        /// <summary>Starts the asynchronous pump.</summary>
+        internal void Start() => _ = PumpAsync();
+
+        /// <summary>Pumps the async enumerable into the observer.</summary>
+        /// <returns>The asynchronous pump task.</returns>
+        internal async Task PumpAsync()
+        {
+            try
+            {
+                var enumerator = _values.GetAsyncEnumerator(_cts.Token);
+                Volatile.Write(ref _enumerator, enumerator);
+                while (!_cts.IsCancellationRequested && await enumerator.MoveNextAsync().ConfigureAwait(false))
+                {
+                    // Cancellation discards the current buffered value.
+                    if (_cts.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    _observer.OnNext(enumerator.Current);
+                }
+
+                if (!_cts.IsCancellationRequested)
+                {
+                    _observer.OnCompleted();
+                }
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+                // Subscription disposal does not send a terminal notification.
+            }
+            catch (Exception error) when (!_cts.IsCancellationRequested)
+            {
+                _observer.OnError(error);
+            }
+            finally
+            {
+                if (TryClaimEnumerator(out var enumerator))
+                {
+                    await enumerator.DisposeAsync().ConfigureAwait(false);
+                }
+
+                Dispose();
+            }
+        }
+
         /// <summary>Disposes an enumerator without surfacing the resulting task to the caller.</summary>
         /// <param name="enumerator">The enumerator to dispose.</param>
-        /// <remarks>
-        /// The disposer cannot await, so disposal runs detached; the local method observes the task to
-        /// prevent unobserved-fault tear-downs, swallowing the <see cref="NotSupportedException"/> raised
-        /// by enumerators that only permit disposal from the enumeration path.
-        /// </remarks>
         private static void FireAndForgetDispose(IAsyncEnumerator<T> enumerator)
         {
+            // Disposal returns before asynchronous enumerator cleanup finishes.
             _ = ObserveAsync(enumerator);
 
             static async Task ObserveAsync(IAsyncEnumerator<T> enumerator)
@@ -124,7 +146,7 @@ public sealed class AsyncEnumerableSignal<T> : IAsyncEnumerableBackedSignal<T>
                 }
                 catch (NotSupportedException)
                 {
-                    // Some enumerators only support disposal from the enumeration path.
+                    // Unsupported concurrent enumerator disposal is ignored.
                 }
             }
         }
@@ -143,50 +165,6 @@ public sealed class AsyncEnumerableSignal<T> : IAsyncEnumerableBackedSignal<T>
 
             enumerator = null!;
             return false;
-        }
-
-        /// <summary>Pumps the async enumerable into the observer.</summary>
-        /// <returns>The asynchronous pump task.</returns>
-        private async Task PumpAsync()
-        {
-            try
-            {
-                var enumerator = _values.GetAsyncEnumerator(_cts.Token);
-                Volatile.Write(ref _enumerator, enumerator);
-                while (!_cts.IsCancellationRequested && await enumerator.MoveNextAsync().ConfigureAwait(false))
-                {
-                    // Re-check after the await: disposal may have torn down the observer while the
-                    // element was in flight, so a buffered value must not reach a stopped observer.
-                    if (_cts.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    _observer.OnNext(enumerator.Current);
-                }
-
-                if (!_cts.IsCancellationRequested)
-                {
-                    _observer.OnCompleted();
-                }
-            }
-            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-            {
-                // Disposal requested cancellation; observers should not receive a terminal signal.
-            }
-            catch (Exception error) when (!_cts.IsCancellationRequested)
-            {
-                _observer.OnError(error);
-            }
-            finally
-            {
-                if (TryClaimEnumerator(out var enumerator))
-                {
-                    await enumerator.DisposeAsync().ConfigureAwait(false);
-                }
-
-                Dispose();
-            }
         }
     }
 }

@@ -11,7 +11,10 @@ namespace ReactiveUI.Primitives.Extensions.Reactive.Operators;
 namespace ReactiveUI.Primitives.Extensions.Operators;
 #endif
 
-/// <summary>Injects heartbeat values into the sequence when the source remains quiet for a specified period.</summary>
+/// <summary>
+/// Wraps each source value as an update and emits a heartbeat every <paramref name="heartbeatPeriod"/> that the source
+/// stays quiet, restarting the timer on each value.
+/// </summary>
 /// <typeparam name="T">The type of elements in the source sequence.</typeparam>
 /// <param name="source">The source observable.</param>
 /// <param name="heartbeatPeriod">The period between heartbeats.</param>
@@ -34,7 +37,7 @@ internal sealed class HeartbeatObservable<T>(
         return sink;
     }
 
-    /// <summary>The sink for the heartbeat operator.</summary>
+    /// <summary>Sink that forwards upstream values and emits a heartbeat whenever the period elapses without one.</summary>
     /// <param name="downstream">The downstream observer.</param>
     /// <param name="heartbeatPeriod">The period between heartbeats.</param>
     /// <param name="scheduler">The scheduler to run the heartbeat timer on.</param>
@@ -49,7 +52,7 @@ internal sealed class HeartbeatObservable<T>(
         /// <summary>The subscription to the periodic heartbeat timer.</summary>
         private readonly MutableDisposable _timerSubscription = new();
 
-        /// <summary>Upstream subscription handle; set once via <see cref="AttachSourceSubscription"/> so the sink can tear it down in <see cref="Dispose"/> without needing a wrapper bag.</summary>
+        /// <summary>Upstream subscription handle, set once via <see cref="AttachSourceSubscription"/> and torn down in <see cref="Dispose"/>.</summary>
         private IDisposable? _sourceSubscription;
 
         /// <summary>Whether the sink has completed or been disposed.</summary>
@@ -71,7 +74,7 @@ internal sealed class HeartbeatObservable<T>(
             }
         }
 
-        /// <summary>Initializes the heartbeat timer.</summary>
+        /// <summary>Starts the heartbeat timer, which the caller does at subscribe time.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Initialize() => ScheduleHeartbeats();
 
@@ -137,7 +140,7 @@ internal sealed class HeartbeatObservable<T>(
             subscription?.Dispose();
         }
 
-        /// <summary>Schedules the next heartbeat.</summary>
+        /// <summary>Restarts the periodic heartbeat timer, dropping the one it replaces.</summary>
         private void ScheduleHeartbeats()
         {
             lock (_gate)

@@ -8,10 +8,7 @@ using ReactiveUI.Primitives.Async.Signals;
 
 namespace ReactiveUI.Primitives.Async;
 
-/// <summary>Provides extension methods for working with signals in a reactive programming context.</summary>
-/// <remarks>The methods in this class enable interoperability between signals and asynchronous observer
-/// patterns. These extensions are intended to simplify the integration of signals with APIs that expect asynchronous
-/// observers.</remarks>
+/// <summary>Adapts a signal to an observer, and projects a signal's value sequence without changing where values are published.</summary>
 public static class SignalExtensions
 {
     /// <summary>Observer-wrapping and value-mapping operators for a signal source.</summary>
@@ -24,7 +21,7 @@ public static class SignalExtensions
         [SuppressMessage(
             "Roslynator",
             "RCS1047:Non-asynchronous method name should not end with \'Async\'",
-            Justification = "This is an existing method")]
+            Justification = "The suffix names the IObserverAsync the method returns, not asynchronous work.")]
         public IObserverAsync<T> AsObserverAsync()
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -32,16 +29,12 @@ public static class SignalExtensions
             return new SignalAsyncWitness<T>(source);
         }
 
-        /// <summary>
-        /// Creates a new signal that applies a transformation to the values of the source signal using the specified
-        /// mapping function.
-        /// </summary>
-        /// <param name="mapper">A function that takes an asynchronous observable of type T and returns a transformed asynchronous observable of
-        /// type T. This function defines how the values are mapped.</param>
-        /// <returns>A signal that emits values transformed by the specified mapping function.</returns>
-        /// <remarks>The returned signal reflects the mapped values of the original signal. Subscribers to the
-        /// returned signal will observe the transformed sequence as defined by the mapper function. The mapping is applied
-        /// to all values published by the source signal.</remarks>
+        /// <summary>Creates a signal whose observers see <paramref name="mapper"/> applied to the source's value sequence.</summary>
+        /// <param name="mapper">Projects the source's value sequence into the sequence observers receive.</param>
+        /// <returns>A signal that publishes into <paramref name="source"/> but exposes the mapped sequence to its own
+        /// subscribers.</returns>
+        /// <remarks><paramref name="mapper"/> runs once, against the source's value sequence, rather than per
+        /// subscriber.</remarks>
         public ISignalAsync<T> MapValues(Func<IObservableAsync<T>, IObservableAsync<T>> mapper)
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -54,8 +47,7 @@ public static class SignalExtensions
     /// <summary>A signal that applies a transformation to the observable values of the source signal.</summary>
     /// <typeparam name="T">The type of elements processed by the signal.</typeparam>
     /// <param name="original">The source signal.</param>
-    /// <param name="mapper">A function that takes an asynchronous observable of type T and returns a transformed asynchronous observable of
-    /// type T. This function defines how the values are mapped.</param>
+    /// <param name="mapper">Transforms the source's value sequence once during construction.</param>
     internal sealed class MappedSignal<T>(
         ISignalAsync<T> original,
         Func<IObservableAsync<T>, IObservableAsync<T>> mapper) : ISignalAsync<T>
@@ -94,15 +86,7 @@ public static class SignalExtensions
     /// <param name="signal">The signal to forward notifications to.</param>
     internal sealed class SignalAsyncWitness<T>(ISignalAsync<T> signal) : WitnessAsync<T>
     {
-        /// <summary>
-        /// Forwards the value to the wrapped signal. The cancellation token is intentionally
-        /// replaced with <see cref="CancellationToken.None"/> rather than passing our own dispose
-        /// token through: subscribers downstream of the signal are <see cref="WitnessAsync{T}"/>
-        /// wraps whose <c>TryEnter</c> short-circuits on <see cref="CancellationToken.None"/> via
-        /// its fast path, avoiding a per-emission linked-CTS allocation on every observer. The
-        /// upstream-disposal cascade is unaffected — by the time this observer is disposed (on
-        /// source completion / error) no further <c>OnNext</c> calls reach this method.
-        /// </summary>
+        /// <summary>Forwards the value with an uncancelable token after the observer's disposal check.</summary>
         /// <param name="value">The value to be processed by the observer.</param>
         /// <param name="cancellationToken">The token captured by the base observer's TryEnter scope. Ignored on the forward.</param>
         /// <returns>A ValueTask that represents the asynchronous operation.</returns>
@@ -122,9 +106,9 @@ public static class SignalExtensions
             return signal.OnErrorResumeAsync(error, CancellationToken.None);
         }
 
-        /// <summary>Performs asynchronous completion logic when the operation has finished, using the specified result.</summary>
+        /// <summary>Forwards the terminal result to the wrapped signal.</summary>
         /// <param name="result">The result of the completed operation, containing any relevant outcome information.</param>
-        /// <returns>A ValueTask that represents the asynchronous completion operation.</returns>
+        /// <returns>A task that completes when the signal has handled the result.</returns>
         protected override ValueTask OnCompletedAsyncCore(Result result) => signal.OnCompletedAsync(result);
     }
 }

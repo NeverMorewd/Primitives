@@ -10,10 +10,7 @@ namespace ReactiveUI.Primitives.Extensions.Reactive.Operators;
 namespace ReactiveUI.Primitives.Extensions.Operators;
 #endif
 
-/// <summary>
-/// Buffers elements and emits them when the stream has been idle for a specified duration. Backs both
-/// the <c>BufferUntilIdle</c> and <c>BufferUntilInactive</c> public operators.
-/// </summary>
+/// <summary>Buffers elements until the source has been idle for the specified duration.</summary>
 /// <typeparam name="T">The type of elements in the source sequence.</typeparam>
 /// <param name="source">The source observable.</param>
 /// <param name="idleTime">The duration of inactivity required to flush the buffer.</param>
@@ -35,13 +32,10 @@ internal sealed class BufferUntilIdleObservable<T>(
         return new DisposableBag(subscription, sink);
     }
 
-    /// <summary>
-    /// Sink that manages the buffer and idle timer. Composes <see cref="TimerSinkState{T}"/> for
-    /// the shared gate / timer / done-flag plumbing so this class only carries the buffer logic.
-    /// </summary>
+    /// <summary>Sink that accumulates elements and emits the buffer once the idle timer elapses.</summary>
     /// <param name="downstream">The downstream observer.</param>
     /// <param name="idleTime">The idle time period.</param>
-    /// <param name="scheduler">The scheduler.</param>
+    /// <param name="scheduler">The sequencer that times the idle period.</param>
     private sealed class BufferUntilIdleSink(
         IObserver<IList<T>> downstream,
         TimeSpan idleTime,
@@ -50,7 +44,7 @@ internal sealed class BufferUntilIdleObservable<T>(
         /// <summary>The gate protecting state transitions and downstream notification.</summary>
         private readonly Lock _gate = new();
 
-        /// <summary>Shared timer / done-flag plumbing.</summary>
+        /// <summary>The timer slot and terminal-state flag shared with the operator's handlers.</summary>
         private readonly TimerSinkState<IList<T>> _state = new(downstream);
 
         /// <summary>The current buffer of elements.</summary>
@@ -100,7 +94,7 @@ internal sealed class BufferUntilIdleObservable<T>(
             }
         }
 
-        /// <summary>Schedules a flush after the idle period.</summary>
+        /// <summary>Replaces any pending flush with one scheduled a further idle period ahead.</summary>
         private void ScheduleFlush() => _state.Timer.Disposable = scheduler.Schedule(idleTime, Flush);
 
         /// <summary>Flushes the current buffer to the downstream observer.</summary>

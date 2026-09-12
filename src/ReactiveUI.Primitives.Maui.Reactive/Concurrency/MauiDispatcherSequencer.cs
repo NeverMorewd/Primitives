@@ -8,6 +8,7 @@ using Microsoft.Maui.Dispatching;
 namespace ReactiveUI.Primitives.Reactive.Concurrency;
 
 /// <summary>MAUI dispatcher scheduler that coalesces scheduled work through an <see cref="IDispatcher"/>.</summary>
+/// <remarks>Callbacks run on the dispatcher thread; cancellation suppresses delayed actions without cancelling the underlying delay.</remarks>
 /// <seealso cref="System.Reactive.Concurrency.IScheduler" />
 [System.Diagnostics.DebuggerDisplay("MauiDispatcherSequencer: Dispatcher = {Dispatcher}")]
 public sealed class MauiDispatcherSequencer : CoalescingDispatchScheduler
@@ -28,6 +29,8 @@ public sealed class MauiDispatcherSequencer : CoalescingDispatchScheduler
     protected override IDisposable ScheduleOnDispatcher(Action work, TimeSpan dueTime)
     {
         _ = Dispatcher.DispatchDelayed(dueTime, work);
+
+        // Cancelling suppresses delivery while the requested delay remains scheduled.
         return Disposable.Empty;
     }
 }

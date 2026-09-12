@@ -12,7 +12,7 @@ namespace ReactiveUI.Primitives.Async.Advanced;
 [System.Diagnostics.DebuggerDisplay("TaskResultCompletionSource: IsCompleted = {_taskSource.Task.IsCompleted}")]
 public sealed class TaskResultCompletionSource<T>(CancellationToken cancellationToken)
 {
-    /// <summary>The task completion source used to publish the terminal result.</summary>
+    /// <summary>The task completion source that publishes the terminal result.</summary>
     private readonly TaskCompletionSource<T> _taskSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>The cancellation token that cancels the terminal wait.</summary>
@@ -23,19 +23,26 @@ public sealed class TaskResultCompletionSource<T>(CancellationToken cancellation
     /// <returns>The terminal result value.</returns>
     public async ValueTask<T> AwaitResultAsync(IAsyncDisposable owner)
     {
+        CancellationTokenRegistration cancellationRegistration = default;
         try
         {
-#if NET8_0_OR_GREATER
-            await using var cancellationRegistration = RegisterCancellation();
-#else
-            using var cancellationRegistration = RegisterCancellation();
-#endif
-
+            cancellationRegistration = RegisterCancellation();
             return await _taskSource.Task.ConfigureAwait(false);
         }
         finally
         {
-            await owner.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+#if NET8_0_OR_GREATER
+                await cancellationRegistration.DisposeAsync().ConfigureAwait(false);
+#else
+                cancellationRegistration.Dispose();
+#endif
+            }
+            finally
+            {
+                await owner.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 

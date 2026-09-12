@@ -6,24 +6,8 @@ using System.Reactive.Disposables;
 
 namespace ReactiveUI.Primitives.Reactive.Disposables;
 
-/// <summary>
-/// A <see cref="MultipleDisposable"/> that a System.Reactive consumer can use as a
-/// <see cref="CompositeDisposable"/>, so an activation-scoped container flows into APIs written against
-/// System.Reactive - <c>DisposeWith</c> above all - without the caller converting it by hand.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The conversion is identity-stable: every conversion of the same container yields the same
-/// <see cref="CompositeDisposable"/>, and the container owns that composite, so anything registered through it
-/// is disposed when the container is. Registering after the container is disposed disposes the registration
-/// immediately, matching <see cref="MultipleDisposable.Add"/>.
-/// </para>
-/// <para>
-/// Registrations made through the composite are not visible to the container's own
-/// <see cref="ICollection{T}"/> members: the composite occupies a single slot, so <c>Count</c> counts it once
-/// and <c>Contains</c>/<c>Remove</c> do not see through it.
-/// </para>
-/// </remarks>
+/// <summary>Holds disposables and supports implicit conversion to a System.Reactive composite disposable.</summary>
+/// <remarks>Conversions reuse a composite owned by the container. Composite registrations occupy one container slot and are not individually visible through Count, Contains, or Remove.</remarks>
 [System.Diagnostics.DebuggerDisplay("ContainerDisposable: Count = {Count}, IsDisposed = {IsDisposed}")]
 public sealed class ContainerDisposable : MultipleDisposable
 {
@@ -79,9 +63,7 @@ public sealed class ContainerDisposable : MultipleDisposable
     {
         lock (_gate)
         {
-            // A disposed composite is still the right answer once the container itself is disposed - it is the
-            // sink that disposes late arrivals. After Clear() or Remove() the container lives on, so a composite
-            // it disposed has to be replaced rather than handed out again.
+            // Disposed containers reject late additions; live containers replace composites removed by Clear or Remove.
             var existing = _composite;
             if (existing is not null && (!existing.IsDisposed || IsDisposed))
             {
@@ -91,9 +73,7 @@ public sealed class ContainerDisposable : MultipleDisposable
             var created = new CompositeDisposable();
             _composite = created;
 
-            // Registering the composite with the container is what ties the two lifetimes together. On an
-            // already-disposed container this disposes the composite instead, which is what a caller adding to
-            // a disposed container should get.
+            // Composite disposal follows container disposal.
             Add(created);
             return created;
         }
@@ -104,9 +84,7 @@ public sealed class ContainerDisposable : MultipleDisposable
     {
         base.Dispose(disposing);
 
-        // The composite occupies a slot in the container, so the base disposed it just now - or Clear()/Remove()
-        // did on the way out. Disposing it here is idempotent and states the ownership outright. Nothing in this
-        // hierarchy has a finalizer and the class is sealed, so this only ever runs on the deterministic path.
+        // Repeated composite disposal has no effect.
         _composite?.Dispose();
     }
 }

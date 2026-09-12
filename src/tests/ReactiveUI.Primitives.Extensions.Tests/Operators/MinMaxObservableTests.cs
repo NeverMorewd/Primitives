@@ -7,9 +7,7 @@ using ReactiveUI.Primitives.Extensions.Operators;
 
 namespace ReactiveUI.Primitives.Extensions.Tests.Operators;
 
-/// <summary>Edge-case coverage for the <c>GetMin</c> / <c>GetMax</c> operators
-/// backed by <c>MinMaxObservable&lt;T&gt;</c> — partial-source suppression,
-/// max/min selection over multiple updates, and source-error propagation.</summary>
+/// <summary>Tests extrema across source updates, missing initial values, and source errors.</summary>
 public class MinMaxObservableTests
 {
     /// <summary>Synthetic error message attached to source errors.</summary>
@@ -84,7 +82,7 @@ public class MinMaxObservableTests
         await Assert.That(caught).IsSameReferenceAs(expected);
     }
 
-    /// <summary>Verifies <c>GetMax</c> with no additional sources still emits the source's own values verbatim.</summary>
+    /// <summary>Verifies <c>GetMax</c> with no additional sources emits the source's own values verbatim.</summary>
     /// <returns>A <see cref = "Task"/> representing the asynchronous test operation.</returns>
     [Test]
     public async Task WhenGetMaxSingleSource_ThenEmitsSourceValues()
@@ -98,7 +96,7 @@ public class MinMaxObservableTests
         await Assert.That(results).IsCollectionEqualTo([LowValue, MidValue, HighValue]);
     }
 
-    /// <summary>Verifies <c>GetMin</c> with no additional sources still emits the source's own values verbatim.</summary>
+    /// <summary>Verifies <c>GetMin</c> with no additional sources emits the source's own values verbatim.</summary>
     /// <returns>A <see cref = "Task"/> representing the asynchronous test operation.</returns>
     [Test]
     public async Task WhenGetMinSingleSource_ThenEmitsSourceValues()

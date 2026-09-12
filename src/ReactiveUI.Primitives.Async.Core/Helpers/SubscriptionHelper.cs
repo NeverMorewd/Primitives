@@ -4,16 +4,13 @@
 
 namespace ReactiveUI.Primitives.Async.Helpers;
 
-/// <summary>
-/// Provides a helper for safely subscribing an <see cref="IAsyncDisposable"/> subscription,
-/// ensuring the subscription is disposed if the subscribe action throws.
-/// </summary>
+/// <summary>Provides a helper for safely subscribing an <see cref="IAsyncDisposable"/> subscription, ensuring the subscription is disposed if the subscribe action throws.</summary>
 public static class SubscriptionHelper
 {
-    /// <summary>Executes <paramref name="subscribeAsync"/> and returns <paramref name="subscription"/>.</summary>
+    /// <summary>Runs <paramref name="subscribeAsync"/>, disposing <paramref name="subscription"/> and rethrowing if it fails, so a half-built subscription is never handed back.</summary>
     /// <param name="subscription">The subscription to manage.</param>
     /// <param name="subscribeAsync">The async action that wires up the subscription.</param>
-    /// <returns>The subscription if successful.</returns>
+    /// <returns>The subscription, once wiring succeeded.</returns>
     internal static async ValueTask<IAsyncDisposable> SubscribeAndDisposeOnFailureAsync(
         IAsyncDisposable subscription,
         Func<ValueTask> subscribeAsync)

@@ -8,10 +8,7 @@ using ReactiveUI.Primitives.Async.Disposables;
 
 namespace ReactiveUI.Primitives.Async;
 
-/// <summary>
-/// Async observable that concatenates inner observable sequences emitted by an outer observable,
-/// subscribing to each inner sequence only after the previous one completes.
-/// </summary>
+/// <summary>Async observable that concatenates inner observable sequences emitted by an outer observable, subscribing to each inner sequence only after the previous one completes.</summary>
 /// <typeparam name="T">The type of elements produced by the inner observable sequences.</typeparam>
 /// <param name="source">The outer observable sequence that emits inner observable sequences to concatenate.</param>
 public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsync<T>> source) : IObservableAsync<T>
@@ -30,10 +27,7 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
             () => subscription.SubscribeAsync(source, cancellationToken));
     }
 
-    /// <summary>
-    /// Manages the lifetime of the outer subscription and buffers inner observables,
-    /// subscribing to each one sequentially as the previous completes.
-    /// </summary>
+    /// <summary>Manages the lifetime of the outer subscription and buffers inner observables, subscribing to each one sequentially as the previous completes.</summary>
     internal sealed class ChainCoordinator : IAsyncDisposable
     {
         /// <summary>Concurrent queue that buffers inner observables waiting to be subscribed to.</summary>
@@ -42,7 +36,7 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
         /// <summary>Cancellation token source used to signal disposal of the subscription.</summary>
         private readonly CancellationTokenSource _disposeCts = new();
 
-        /// <summary>Cached cancellation token from the dispose cancellation token source.</summary>
+        /// <summary>Token signalled when this subscription is disposed.</summary>
         private readonly CancellationToken _disposedCancellationToken;
 
         /// <summary>Disposable that holds the single outer subscription.</summary>
@@ -75,8 +69,8 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask DisposeAsync() => FinishAsync(null);
 
-        /// <summary>Handles a second call to <see cref="FinishAsync"/> when already disposed, routing any failure exception to the unhandled exception handler.</summary>
-        /// <param name="result">The completion result from the second call.</param>
+        /// <summary>Routes the failure carried by a redundant <see cref="FinishAsync"/> call to the unhandled exception handler.</summary>
+        /// <param name="result">The completion result from the redundant call.</param>
         internal static void HandleAlreadyDisposed(Result? result)
         {
             if (result?.Exception is not { } exception)
@@ -100,10 +94,7 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
             await _outerDisposable.SetDisposableAsync(outerSubscription).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Handles a new inner observable from the outer sequence by buffering it and subscribing
-        /// if no inner sequence is currently active.
-        /// </summary>
+        /// <summary>Handles a new inner observable from the outer sequence by buffering it and subscribing if no inner sequence is currently active.</summary>
         /// <param name="inner">The inner observable to enqueue.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
         internal ValueTask AcceptOuterValueAsync(IObservableAsync<T> inner)
@@ -121,10 +112,7 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
             return !shouldSubscribe ? default : SubscribeCurrentInnerAsync(inner);
         }
 
-        /// <summary>
-        /// Handles the outer sequence completing, propagating completion downstream when the buffer is empty
-        /// or when the outer fails.
-        /// </summary>
+        /// <summary>Handles the outer sequence completing, propagating completion downstream when the buffer is empty or when the outer fails.</summary>
         /// <param name="result">The completion result from the outer sequence.</param>
         /// <returns>A task representing the asynchronous completion operation.</returns>
         internal ValueTask AcceptOuterCompletionAsync(Result result)
@@ -144,10 +132,7 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
             return shouldComplete ? FinishAsync(completeResult) : default;
         }
 
-        /// <summary>
-        /// Handles the current inner sequence completing, subscribing to the next buffered inner
-        /// sequence or completing the subscription if the outer has also completed.
-        /// </summary>
+        /// <summary>Handles the current inner sequence completing, subscribing to the next buffered inner sequence or completing the subscription if the outer has also completed.</summary>
         /// <param name="result">The completion result from the inner sequence.</param>
         /// <returns>A task representing the asynchronous completion operation.</returns>
         internal ValueTask AcceptInnerCompletionAsync(Result result)
@@ -192,10 +177,7 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
             }
         }
 
-        /// <summary>
-        /// Disposes the inner and outer subscriptions and optionally forwards a completion result to
-        /// the downstream observer. This method is idempotent.
-        /// </summary>
+    /// <summary>Disposes the inner and outer subscriptions once, optionally forwarding completion.</summary>
         /// <param name="result">The completion result to forward, or <see langword="null"/> if disposing without signaling completion.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
         internal async ValueTask FinishAsync(Result? result)
@@ -237,10 +219,7 @@ public sealed class ChainSignalSourcesSignal<T>(IObservableAsync<IObservableAsyn
                 Exception error,
                 CancellationToken cancellationToken)
             {
-                // The outer subscription is rooted in _disposedCancellationToken, so its disposal
-                // already cascades into this observer's cancellation. Forwarding the dispose token
-                // directly preserves the cancellation semantics that a linked CTS would have
-                // provided, without the per-emission Linked2CancellationTokenSource alloc.
+                // Notifications use subscription cancellation instead of the supplied token.
                 _ = cancellationToken;
                 var token = subscription._disposedCancellationToken;
                 using (await subscription._observerOnSomethingGate.EnterAsync(token).ConfigureAwait(false))

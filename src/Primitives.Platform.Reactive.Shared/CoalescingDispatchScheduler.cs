@@ -9,11 +9,11 @@ using System.Runtime.CompilerServices;
 
 namespace ReactiveUI.Primitives.Reactive.Concurrency;
 
-/// <summary>
-/// Base <see cref="IScheduler"/> for UI-thread dispatchers that coalesces dispatcher posts: immediate work is queued
-/// and drained one batch per post. A sealed platform scheduler supplies its dispatcher <see cref="Post"/> (and
-/// optionally a native delayed path via <see cref="ScheduleOnDispatcher"/>).
-/// </summary>
+/// <summary>Base <see cref="IScheduler"/> for UI-thread dispatchers that drains queued work one batch per dispatcher post.</summary>
+/// <remarks>
+/// Work runs in posted dispatcher batches without inline reentrancy. Disposing a scheduled action suppresses unstarted work and disposes the
+/// resource returned by an action that has started.
+/// </remarks>
 [System.Diagnostics.DebuggerDisplay("CoalescingDispatchScheduler: ReadyCount = {_readyCount}, DrainPosted = {_drainPosted}")]
 public abstract class CoalescingDispatchScheduler : LocalScheduler
 {
@@ -23,14 +23,28 @@ public abstract class CoalescingDispatchScheduler : LocalScheduler
     /// <summary>Cached drain callback (this scheduler's <see cref="RunDrain"/>) marshalled by <see cref="Post"/>.</summary>
     private readonly Action _drain;
 
-    /// <summary>Approximate number of ready items; snapshots a drain batch.</summary>
+    /// <summary>Schedules delays before work returns to the dispatcher.</summary>
+    private readonly IScheduler _delayScheduler;
+
+    /// <summary>Approximate count of ready items; bounds the batch one drain dequeues.</summary>
     private int _readyCount;
 
     /// <summary>Gate that keeps at most one queued drain callback pending.</summary>
     private int _drainPosted;
 
     /// <summary>Initializes a new instance of the <see cref="CoalescingDispatchScheduler"/> class.</summary>
-    protected CoalescingDispatchScheduler() => _drain = RunDrain;
+    /// <param name="delayScheduler">Scheduler used for relative delays.</param>
+    internal CoalescingDispatchScheduler(IScheduler delayScheduler)
+    {
+        _drain = RunDrain;
+        _delayScheduler = delayScheduler;
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="CoalescingDispatchScheduler"/> class.</summary>
+    protected CoalescingDispatchScheduler()
+        : this(DefaultScheduler.Instance)
+    {
+    }
 
     /// <summary>Schedules an action to be executed as soon as possible on the dispatcher.</summary>
     /// <typeparam name="TState">The type of the state passed to the action.</typeparam>
@@ -76,16 +90,12 @@ public abstract class CoalescingDispatchScheduler : LocalScheduler
     /// <returns><see langword="true"/> when the dispatcher accepted the work.</returns>
     protected abstract bool Post(Action drain);
 
-    /// <summary>
-    /// Runs <paramref name="work"/> on the dispatcher after <paramref name="dueTime"/>. The default marshals the wait
-    /// onto the shared timer, then re-queues the work onto the dispatcher when it is due. Platforms with a native
-    /// UI-thread timer override this to run the work directly on the dispatcher thread.
-    /// </summary>
+    /// <summary>Schedules delayed work for dispatcher delivery; platforms may override with a native UI timer.</summary>
     /// <param name="work">Callback to invoke on the dispatcher thread when due.</param>
     /// <param name="dueTime">Relative time after which to invoke <paramref name="work"/>.</param>
     /// <returns>The disposable used to cancel the delayed dispatch.</returns>
     protected virtual IDisposable ScheduleOnDispatcher(Action work, TimeSpan dueTime) =>
-        DefaultScheduler.Instance.Schedule(
+        _delayScheduler.Schedule(
             (Owner: this, work),
             dueTime,
             static (_, state) => state.Owner.Schedule(
@@ -96,7 +106,7 @@ public abstract class CoalescingDispatchScheduler : LocalScheduler
                     return Disposable.Empty;
                 }));
 
-    /// <summary>Re-posts a drain if work is still queued; platform adapters call this when the dispatcher becomes ready.</summary>
+    /// <summary>Posts a drain when queued work remains; platform adapters call this when the dispatcher becomes ready.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected void RequestDrain() => PostDrain();
 

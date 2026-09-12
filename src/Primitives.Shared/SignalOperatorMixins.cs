@@ -136,10 +136,7 @@ public static partial class LinqExtensions
             return new MapIndexedSignal<T, TResult>(source, selector);
         }
 
-        /// <summary>
-        /// Projects each element of an observable sequence into a new form by incorporating state that is passed to the
-        /// selector function.
-        /// </summary>
+        /// <summary>Projects each element of an observable sequence into a new form by incorporating state that is passed to the selector function.</summary>
         /// <typeparam name="TState">The type of the state used in the selector function.</typeparam>
         /// <typeparam name="TResult">The type of the elements in the result sequence.</typeparam>
         /// <param name="state">The state to pass to the selector function.</param>
@@ -308,7 +305,7 @@ public static partial class LinqExtensions
             return new SkipSignal<T>(source, count);
         }
 
-        /// <summary>Suppresses values that have already been observed.</summary>
+        /// <summary>Suppresses every value that matches one seen earlier in the sequence.</summary>
         /// <returns>A sequence containing the first occurrence of each source value.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
         public IObservable<T> Distinct()
@@ -318,7 +315,7 @@ public static partial class LinqExtensions
             return new DistinctSignal<T>(source, null);
         }
 
-        /// <summary>Suppresses values that have already been observed using the supplied comparer.</summary>
+        /// <summary>Suppresses every value that the supplied comparer matches to one seen earlier.</summary>
         /// <param name="comparer">The comparer used to identify duplicate values.</param>
         /// <returns>A sequence containing the first occurrence of each source value.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
@@ -634,8 +631,7 @@ public static partial class LinqExtensions
         [System.Diagnostics.CodeAnalysis.SuppressMessage(
             "Design",
             "SST2307:Generic method type parameters should be inferable from the parameters",
-            Justification =
-                "The type parameter defines the element type for this Rx-style factory and cannot be inferred from the arguments.")]
+            Justification = "No argument carries the result type, so it can only come from an explicit type argument.")]
         public IObservable<TResult> KeepType<TResult>()
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -650,8 +646,7 @@ public static partial class LinqExtensions
         [System.Diagnostics.CodeAnalysis.SuppressMessage(
             "Design",
             "SST2307:Generic method type parameters should be inferable from the parameters",
-            Justification =
-                "The type parameter defines the element type for this Rx-style factory and cannot be inferred from the arguments.")]
+            Justification = "No argument carries the result type, so it can only come from an explicit type argument.")]
         public IObservable<TResult> CastTo<TResult>()
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -671,8 +666,7 @@ public static partial class LinqExtensions
         [System.Diagnostics.CodeAnalysis.SuppressMessage(
             "Concurrency",
             "PSH1315:A blocking wait on an awaitable that may not be done",
-            Justification =
-                "Synchronous read of an already-completed (RanToCompletion) task preserves the existing allocation-free fast path; await is invalid in this synchronous factory.")]
+            Justification = "The read is guarded by a RanToCompletion check, so the task is done.")]
         public IObservable<T> ToSignal()
         {
             ArgumentExceptionHelper.ThrowIfNull(task);

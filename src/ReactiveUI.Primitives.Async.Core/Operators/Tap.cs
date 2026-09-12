@@ -7,9 +7,6 @@ using System.Runtime.CompilerServices;
 namespace ReactiveUI.Primitives.Async;
 
 /// <summary>Provides extension methods for working with asynchronous observable sequences.</summary>
-/// <remarks>The methods in this class enable the addition of side effects, such as logging or resource
-/// management, to asynchronous observable sequences without modifying their elements or control flow. These methods are
-/// intended to be used as part of a fluent query or processing pipeline for asynchronous observables.</remarks>
 public static partial class SignalAsyncExtensions
 {
     /// <summary>Side-effect (Tap/Do) operators that invoke callbacks for each notification of an observable source sequence.</summary>
@@ -48,10 +45,7 @@ public static partial class SignalAsyncExtensions
             Action onCompleted) =>
             new TapSyncSignal<T>(source, onNext, onError, _ => onCompleted());
 
-        /// <summary>
-        /// Invokes the specified asynchronous actions for each element, error, or completion notification in the
-        /// observable sequence without modifying the sequence.
-        /// </summary>
+        /// <summary>Invokes the specified asynchronous actions for each element, error, or completion notification in the observable sequence without modifying the sequence.</summary>
         /// <param name="onNext">An asynchronous callback to invoke for each element in the sequence.</param>
         /// <param name="onErrorResume">An optional asynchronous callback to invoke if an error occurs in the sequence.</param>
         /// <param name="onCompleted">An optional asynchronous callback to invoke when the sequence completes.</param>
@@ -70,10 +64,7 @@ public static partial class SignalAsyncExtensions
         public IObservableAsync<T> Do(Func<T, CancellationToken, ValueTask>? onNext) =>
             onNext is null ? source : new TapAsyncSignal<T>(source, onNext, null, null);
 
-        /// <summary>
-        /// Invokes the specified actions in response to notifications from the observable sequence without modifying
-        /// the sequence itself.
-        /// </summary>
+        /// <summary>Invokes the specified actions in response to notifications from the observable sequence without modifying the sequence itself.</summary>
         /// <param name="onNext">An action to invoke for each element in the sequence as it is emitted.</param>
         /// <param name="onErrorResume">An action to invoke if an error occurs in the sequence.</param>
         /// <param name="onCompleted">An action to invoke when the sequence completes, receiving the final result.</param>

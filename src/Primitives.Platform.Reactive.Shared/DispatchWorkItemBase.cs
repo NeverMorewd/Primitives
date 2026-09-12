@@ -8,12 +8,7 @@ using System.Runtime.CompilerServices;
 
 namespace ReactiveUI.Primitives.Reactive.Concurrency;
 
-/// <summary>
-/// Shared run/cancel core for scheduled, cancellable work items carrying closure-free state and the scheduler passed
-/// back to the action. It owns the atomic start-versus-cancel handshake so every dispatcher and event-loop scheduler
-/// implements it exactly once; derived types add only the cancellation resources specific to how the work was queued
-/// (for example a one-shot timer).
-/// </summary>
+/// <summary>Coordinates work execution and cancellation; derived items own scheduling resources.</summary>
 /// <typeparam name="TState">The scheduled state type.</typeparam>
 internal class DispatchWorkItemBase<TState>
 {
@@ -36,11 +31,6 @@ internal class DispatchWorkItemBase<TState>
     /// <param name="scheduler">The scheduler passed back to the scheduled action.</param>
     /// <param name="state">Scheduled state.</param>
     /// <param name="action">Scheduled action.</param>
-    /// <remarks>
-    /// Written out rather than made a primary constructor so it can stay <c>protected</c>: a primary
-    /// constructor on a concrete class is public, which would let anything construct the base directly
-    /// instead of going through a derived work item.
-    /// </remarks>
     protected DispatchWorkItemBase(
         IScheduler scheduler,
         TState state,
@@ -54,7 +44,7 @@ internal class DispatchWorkItemBase<TState>
     /// <summary>Gets a value indicating whether the work item has been cancelled.</summary>
     internal bool IsDisposed => Volatile.Read(ref _isDisposed) != 0;
 
-    /// <summary>Runs the scheduled action unless it has already been cancelled, disposing its result if a cancel races the start.</summary>
+    /// <summary>Runs the scheduled action unless it has been cancelled, disposing its result when a cancel races the start.</summary>
     public void Run()
     {
         if (IsDisposed)
@@ -70,19 +60,25 @@ internal class DispatchWorkItemBase<TState>
             return;
         }
 
+        ReleaseCanceledResult();
+    }
+
+    /// <summary>Releases the published result if the work item is cancelled.</summary>
+    internal void ReleaseCanceledResult()
+    {
         if (!IsDisposed)
         {
             return;
         }
 
-        disposable.Dispose();
+        ReleaseStartedWork();
     }
 
     /// <summary>Atomically claims the single cancellation transition for this work item.</summary>
     /// <returns><see langword="true"/> for the first caller, which owns releasing the item's resources.</returns>
     protected bool TryClaimDispose() => Interlocked.Exchange(ref _isDisposed, 1) == 0;
 
-    /// <summary>Releases the disposable the action returned once it has started, so a late cancel still tears it down.</summary>
+    /// <summary>Disposes whatever the started action returned, so a cancel arriving after the start tears it down.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected void ReleaseStartedWork() => Interlocked.Exchange(ref _disposable, Disposable.Empty)?.Dispose();
 }

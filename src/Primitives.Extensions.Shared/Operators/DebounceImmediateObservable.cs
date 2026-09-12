@@ -10,7 +10,7 @@ namespace ReactiveUI.Primitives.Extensions.Reactive.Operators;
 namespace ReactiveUI.Primitives.Extensions.Operators;
 #endif
 
-/// <summary>Debounces a sequence but emits the first value immediately.</summary>
+/// <summary>Emits the first value inline, then the most recent value after <paramref name="dueTime"/> of quiet.</summary>
 /// <typeparam name="T">The type of elements in the source sequence.</typeparam>
 /// <param name="source">The source observable.</param>
 /// <param name="dueTime">The debounce duration.</param>
@@ -32,7 +32,7 @@ internal sealed class DebounceImmediateObservable<T>(
         return new DisposableBag(subscription, sink);
     }
 
-    /// <summary>Sink for the debounce immediate observable.</summary>
+    /// <summary>Sink that forwards the first value inline and debounces every later value by the due time.</summary>
     /// <param name="downstream">The downstream observer.</param>
     /// <param name="dueTime">The debounce duration.</param>
     /// <param name="scheduler">The scheduler to use for timing.</param>
@@ -44,7 +44,7 @@ internal sealed class DebounceImmediateObservable<T>(
         /// <summary>The gate for thread safety.</summary>
         private readonly Lock _gate = new();
 
-        /// <summary>The timer for debouncing.</summary>
+        /// <summary>The pending debounce timer, replaced whenever a newer value arrives.</summary>
         private readonly SwapDisposable _timer = new();
 
         /// <summary>Whether the first value has been emitted.</summary>
@@ -126,7 +126,7 @@ internal sealed class DebounceImmediateObservable<T>(
             }
         }
 
-        /// <summary>Emits the last value if any.</summary>
+        /// <summary>Emits the waiting value, if there is one, and clears it.</summary>
         private void Emit()
         {
             T? toEmit;

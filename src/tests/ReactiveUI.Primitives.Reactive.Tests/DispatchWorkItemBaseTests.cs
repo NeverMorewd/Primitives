@@ -9,28 +9,22 @@ using ReactiveUI.Primitives.Reactive.Concurrency;
 
 namespace ReactiveUI.Primitives.Reactive.Tests;
 
-/// <summary>
-/// Tests for the run/cancel handshake in <see cref="DispatchWorkItemBase{TState}"/>: when a cancel claims the
-/// item after its action has started but before the run finishes, the disposable the action produced must still
-/// be torn down.
-/// </summary>
+/// <summary>Tests the run/cancel handshake in <see cref="DispatchWorkItemBase{TState}"/>, which tears down work a cancelled action returned.</summary>
 public sealed class DispatchWorkItemBaseTests
 {
     /// <summary>The scheduled state value the probe work item carries.</summary>
     private const int ProbeState = 0;
 
-    /// <summary>Verifies a cancel that races the running action still disposes the work the action returned.</summary>
+    /// <summary>Verifies a cancel that races the running action disposes the work the action returned.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task RunDisposesTheStartedWorkWhenCancellationClaimsTheItemDuringItsAction()
     {
         BooleanDisposable started = new();
         ProbeWorkItem? item = null;
-        item = new(Scheduler.Default, ProbeState, (_, _) =>
+        item = new(Scheduler.Immediate, ProbeState, (_, _) =>
         {
-            // Reproduce the interleaving the guard exists for: a concurrent cancel has claimed the single
-            // dispose transition, but the run's compare-exchange has already published the started work, so
-            // the run itself is what tears the work down.
+            // Cancellation claims disposal before Run publishes its started work.
             _ = item!.ClaimCancellation();
             return started;
         });

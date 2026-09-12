@@ -47,12 +47,10 @@ public sealed class BufferWitness<T>(IObserver<IList<T>> observer, int count, in
         var buffer = _buffer;
         if (idx == 0)
         {
-            // Window starts: allocate exactly one array of the known window size.
             buffer = new T[_count];
             _buffer = buffer;
         }
 
-        // Take while not skipping; the window index doubles as the array slot.
         if (idx >= 0)
         {
             buffer![idx] = value;
@@ -65,13 +63,9 @@ public sealed class BufferWitness<T>(IObserver<IList<T>> observer, int count, in
             return;
         }
 
-        // The window is full: hand the buffer over and reset to the skip *before* the hand-off. The
-        // observer may throw, and it must never be able to leave this sink holding an index into a
-        // buffer it has already released — the next value would index into null.
         _buffer = null;
         _index = 0 - _skip;
 
-        // The window is full, so the array is exactly the right size; emit it directly.
         Emit(buffer!);
     }
 
@@ -114,7 +108,7 @@ public sealed class BufferWitness<T>(IObserver<IList<T>> observer, int count, in
         }
     }
 
-    /// <summary>Assigns the upstream subscription, disposing it if one is already held.</summary>
+    /// <summary>Assigns the upstream subscription, disposing the incoming one when this sink holds a subscription or has been disposed.</summary>
     /// <param name="subscription">The upstream subscription.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SetSubscription(IDisposable subscription) => SinkSubscription.Set(ref _subscription, subscription);
@@ -122,23 +116,17 @@ public sealed class BufferWitness<T>(IObserver<IList<T>> observer, int count, in
     /// <inheritdoc/>
     public void Dispose()
     {
-        // Latching here is what makes the sink terminal on every teardown path, including the one taken
-        // when the downstream observer throws out of Emit: a source that ignores disposal is then a no-op.
+        // Values after teardown are ignored, including after observer failure.
         Volatile.Write(ref _done, 1);
         SinkSubscription.Dispose(ref _subscription);
     }
 
-    /// <summary>Returns the window array, copying to an exact-size array only for a partial trailing window.</summary>
+    /// <summary>Copies the partial trailing window into an exact-size array.</summary>
     /// <param name="buffer">The window buffer.</param>
     /// <param name="length">The number of filled elements.</param>
     /// <returns>The window array.</returns>
     private static T[] Trim(T[] buffer, int length)
     {
-        if (length == buffer.Length)
-        {
-            return buffer;
-        }
-
         var exact = new T[length];
         Array.Copy(buffer, exact, length);
         return exact;

@@ -5,8 +5,6 @@
 namespace ReactiveUI.Primitives.Async;
 
 /// <summary>Provides SkipWhile extension methods for asynchronous observable sequences.</summary>
-/// <remarks>SkipWhile bypasses elements in the source sequence as long as a predicate is satisfied,
-/// then emits all remaining elements.</remarks>
 public static partial class SignalAsyncExtensions
 {
     /// <summary>SkipWhile operators for an observable source sequence.</summary>
@@ -14,15 +12,12 @@ public static partial class SignalAsyncExtensions
     /// <param name="source">The source observable sequence.</param>
     extension<T>(IObservableAsync<T> source)
     {
-        /// <summary>
-        /// Bypasses elements in the observable sequence as long as the specified asynchronous condition is true,
-        /// then emits all remaining elements.
-        /// </summary>
+        /// <summary>Bypasses elements in the observable sequence as long as the specified asynchronous condition is true, then emits all remaining elements.</summary>
         /// <param name="predicate">An asynchronous function to test each element for a condition. Receives the element
         /// and a cancellation token.</param>
         /// <returns>An observable sequence that skips elements while the predicate returns true and emits
         /// all subsequent elements.</returns>
-        /// <exception cref="ArgumentExceptionHelper">Thrown if <paramref name="predicate"/> is null.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="predicate"/> is <see langword="null"/>.</exception>
         public IObservableAsync<T> SkipWhile(Func<T, CancellationToken, ValueTask<bool>> predicate)
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -31,14 +26,11 @@ public static partial class SignalAsyncExtensions
             return new SkipWhileAsyncSignal<T>(source, predicate);
         }
 
-        /// <summary>
-        /// Bypasses elements in the observable sequence as long as the specified condition is true,
-        /// then emits all remaining elements.
-        /// </summary>
+        /// <summary>Bypasses elements in the observable sequence as long as the specified condition is true, then emits all remaining elements.</summary>
         /// <param name="predicate">A function to test each element for a condition.</param>
         /// <returns>An observable sequence that skips elements while the predicate returns true and emits
         /// all subsequent elements.</returns>
-        /// <exception cref="ArgumentExceptionHelper">Thrown if <paramref name="predicate"/> is null.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="predicate"/> is <see langword="null"/>.</exception>
         public IObservableAsync<T> SkipWhile(Func<T, bool> predicate)
         {
             ArgumentExceptionHelper.ThrowIfNull(source);
@@ -48,11 +40,7 @@ public static partial class SignalAsyncExtensions
         }
     }
 
-    /// <summary>
-    /// Synchronous-predicate <c>SkipWhile</c> as a single-observer-layer observable; once the
-    /// predicate returns <see langword="false"/> the gate latches and every subsequent emission
-    /// forwards without a predicate call.
-    /// </summary>
+    /// <summary>Skips values while the predicate holds; after it first fails, every later value forwards untested.</summary>
     /// <typeparam name="T">The element type.</typeparam>
     /// <param name="source">The upstream observable.</param>
     /// <param name="predicate">The skip-while predicate.</param>
@@ -113,10 +101,7 @@ public static partial class SignalAsyncExtensions
         }
     }
 
-    /// <summary>
-    /// Async-predicate <c>SkipWhile</c> as a single-observer-layer observable with a sync-completion
-    /// fast path for the post-latch case.
-    /// </summary>
+    /// <summary>Skips values while the asynchronous predicate holds, then forwards every later value without awaiting it.</summary>
     /// <typeparam name="T">The element type.</typeparam>
     /// <param name="source">The upstream observable.</param>
     /// <param name="predicate">The async skip-while predicate.</param>
@@ -141,7 +126,7 @@ public static partial class SignalAsyncExtensions
             return sink;
         }
 
-        /// <summary>Per-subscription observer with latched gate; once gated, async predicate is no longer invoked.</summary>
+        /// <summary>Per-subscription observer with a latched gate; once the gate opens, the predicate is not invoked again.</summary>
         /// <param name="downstream">The downstream observer.</param>
         /// <param name="predicate">The async skip-while predicate.</param>
         /// <param name="subscribeToken">The subscribe-time cancellation token.</param>

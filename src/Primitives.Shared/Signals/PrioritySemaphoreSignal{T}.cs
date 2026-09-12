@@ -103,17 +103,8 @@ public sealed class PrioritySemaphoreSignal<T> : ISignal<T>
     /// <summary>Releases one semaphore slot and drains queued values when capacity is available.</summary>
     public void Release()
     {
-        int previousCount;
-        do
-        {
-            previousCount = Volatile.Read(ref _count);
-            if (previousCount <= 0)
-            {
-                return;
-            }
-        } while (Interlocked.CompareExchange(ref _count, previousCount - 1, previousCount) != previousCount);
-
-        YieldUntilEmptyOrBlocked();
+        var previousCount = Volatile.Read(ref _count);
+        ReleaseObserved(previousCount);
     }
 
     /// <inheritdoc />
@@ -174,7 +165,24 @@ public sealed class PrioritySemaphoreSignal<T> : ISignal<T>
         _inner.Dispose();
     }
 
-    /// <summary>Queues a value when the signal is still accepting input.</summary>
+    /// <summary>Releases one occupied slot, retrying when the observed count has changed.</summary>
+    /// <param name="previousCount">The count observed before attempting release.</param>
+    internal void ReleaseObserved(int previousCount)
+    {
+        while (previousCount > 0)
+        {
+            var currentCount = Interlocked.CompareExchange(ref _count, previousCount - 1, previousCount);
+            if (currentCount == previousCount)
+            {
+                YieldUntilEmptyOrBlocked();
+                return;
+            }
+
+            previousCount = currentCount;
+        }
+    }
+
+    /// <summary>Queues a value while the signal accepts input.</summary>
     /// <param name="value">The value to enqueue.</param>
     /// <returns><see langword="true"/> when the value was queued; otherwise, <see langword="false"/>.</returns>
     private bool Enqueue(T value)
@@ -192,13 +200,7 @@ public sealed class PrioritySemaphoreSignal<T> : ISignal<T>
         }
     }
 
-    /// <summary>Dequeue and forwards values while capacity is available.</summary>
-    /// <remarks>
-    /// Only a single thread ever delivers downstream at a time. A caller that finds a drain
-    /// already in progress hands its work to the active owner and returns; the owner re-checks
-    /// for newly queued work under the gate before relinquishing ownership, so no wakeup is lost
-    /// and no two threads can deliver to the inner signal concurrently.
-    /// </remarks>
+    /// <summary>Drains queued notifications with one delivery owner, checking for pending work before releasing ownership.</summary>
     private void YieldUntilEmptyOrBlocked()
     {
         if (!TryBeginDrain())
@@ -214,7 +216,6 @@ public sealed class PrioritySemaphoreSignal<T> : ISignal<T>
                 Deliver(item);
             }
 
-            // TryTakeNextDrainItem cleared ownership when it returned false.
             owned = false;
         }
         finally
@@ -254,8 +255,6 @@ public sealed class PrioritySemaphoreSignal<T> : ISignal<T>
                 return true;
             }
 
-            // No work remains; release ownership atomically with the empty check so a
-            // producer that queues work after this point will be able to begin a fresh drain.
             _isDraining = false;
             return false;
         }
@@ -356,10 +355,7 @@ public sealed class PrioritySemaphoreSignal<T> : ISignal<T>
         }
     }
 
-    /// <summary>
-    /// A captured value or terminal notification to deliver outside the gate. A readonly struct: one is produced
-    /// per delivered value on the drain path, so it is passed by value instead of allocating per item.
-    /// </summary>
+    /// <summary>A value or terminal notification captured under the gate and delivered outside it.</summary>
     private readonly record struct DrainItem
     {
         /// <summary>An empty drain item used for failed capture paths.</summary>

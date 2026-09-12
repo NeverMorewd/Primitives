@@ -34,7 +34,7 @@ public class DisposableTests
     /// <summary>The number of disposables added to the multiple-disposable group.</summary>
     private const int Twenty = 20;
 
-    /// <summary>Calendar year used by value-type timestamp coverage.</summary>
+    /// <summary>Calendar year used by timestamp values.</summary>
     private const int CalendarYear = 2024;
 
     /// <summary>The disposal count produced when a slot disposes twice.</summary>
@@ -99,7 +99,7 @@ public class DisposableTests
         await Assert.That(actionCount).IsEqualTo(1);
     }
 
-    /// <summary>Covers disposable slot constructor, disposal, removal, and disposed-assignment branches.</summary>
+    /// <summary>Verifies slot assignment after disposal, replacement, and removal from a disposable group.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task DisposableSlotsCoverAssignmentReplacementAndRemovalBranches()
@@ -125,7 +125,7 @@ public class DisposableTests
         DisposeEveryConstructedSlotShape();
     }
 
-    /// <summary>Verifies low-level disposables, collections, and schedulers cover deterministic edges.</summary>
+    /// <summary>Verifies the disposable, copy-on-write list, priority queue, and scheduling contracts.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task LowLevelDisposablesCollectionsAndSchedulersCoverDeterministicEdges()
@@ -175,7 +175,7 @@ public class DisposableTests
         _ = Assert.Throws<ArgumentNullException>(() => current.Schedule((Action)null!));
         _ = Assert.Throws<ArgumentNullException>(() => current.Schedule(One, TimeSpan.Zero, null!));
         List<int> scheduled = [];
-        current.Schedule(One, TimeSpan.FromMilliseconds(1), (_, state) =>
+        current.Schedule(One, TimeSpan.Zero, (_, state) =>
         {
             scheduled.Add(state);
             return EmptyDisposable.Instance;
@@ -188,7 +188,7 @@ public class DisposableTests
         await Assert.That(scheduled.Count).IsEqualTo(Two);
     }
 
-    /// <summary>Exercises value types, disposables, and handle delegates.</summary>
+    /// <summary>Verifies core value-type equality, disposable lifecycles, and the handle delegates.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     [Test]
     public async Task CoreValueTypesDisposablesAndHandlesCoverEqualityAndLifecycleBranches()
@@ -268,7 +268,7 @@ public class DisposableTests
         await Assert.That(multiple.IsDisposed).IsTrue();
     }
 
-    /// <summary>Asserts the protected <c>Dispose(false)</c> path still disposes the underlying disposable exactly once.</summary>
+    /// <summary>Asserts the protected <c>Dispose(false)</c> path disposes the underlying disposable exactly once.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     private static async Task AssertProtectedDisposePathRunsTheUnderlyingDisposableOnce()
     {
@@ -290,7 +290,7 @@ public class DisposableTests
         await Assert.That(multipleFalse).IsEqualTo(1);
     }
 
-    /// <summary>Asserts removal detaches an item from the group and disposal reaches only the items still in it.</summary>
+    /// <summary>Asserts removal detaches an item from the group and disposal reaches only the remaining items.</summary>
     /// <returns>A task representing the asynchronous operation.</returns>
     private static async Task AssertMultipleDisposableRemovesItemsAndDisposesTheRest()
     {
@@ -368,7 +368,7 @@ public class DisposableTests
         _ = Assert.Throws<InvalidOperationException>(() => Handle<int, int, int>.Throw(exception, 1, Two, Three));
     }
 
-    /// <summary>Exposes the protected dispose path for coverage.</summary>
+    /// <summary>Exposes disposal without managed-resource cleanup.</summary>
     private sealed class ExposedSingleDisposable : SingleDisposable
     {
         /// <summary>Initializes a new instance of the <see cref="ExposedSingleDisposable"/> class.</summary>
@@ -383,7 +383,7 @@ public class DisposableTests
         public void DisposeFalse() => Dispose(false);
     }
 
-    /// <summary>Exposes the protected dispose path for coverage.</summary>
+    /// <summary>Exposes disposal without managed-resource cleanup.</summary>
     private sealed class ExposedSingleReplaceableDisposable : SingleReplaceableDisposable
     {
         /// <summary>Initializes a new instance of the <see cref="ExposedSingleReplaceableDisposable"/> class.</summary>
@@ -398,7 +398,7 @@ public class DisposableTests
         public void DisposeFalse() => Dispose(false);
     }
 
-    /// <summary>Exposes the protected dispose path for coverage.</summary>
+    /// <summary>Exposes disposal without managed-resource cleanup.</summary>
     private sealed class ExposedMultipleDisposable : MultipleDisposable
     {
         /// <summary>Initializes a new instance of the <see cref="ExposedMultipleDisposable"/> class.</summary>
