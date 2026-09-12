@@ -1499,22 +1499,29 @@ dotnet add xyz.Reactive/xyz.Reactive.csproj package ReactiveUI.Primitives.Maui.R
 
 | System.Reactive                     | ReactiveUI.Primitives                                                            | Notes                                                          |
 |-------------------------------------|----------------------------------------------------------------------------------|----------------------------------------------------------------|
-| `Observable.Return(value)`          | `Signal.Emit(value)`                                                             | Emits one value and completes.                                 |
-| `Observable.Empty<T>()`             | `Signal.None<T>()`                                                               | Completes immediately.                                         |
-| `Observable.Never<T>()`             | `Signal.Silent<T>()` or `Signal.Silent<T>(witness)`                              | Non-terminating signal; witness overload helps type inference. |
-| `Observable.Throw<T>(ex)`           | `Signal.Fail<T>(ex)`                                                             | Emits terminal error.                                          |
-| `Observable.Range(start, count)`    | `Signal.Sequence(start, count)`                                                  | Optional scheduler overload exists.                            |
-| `Observable.Repeat(value)`          | `Signal.Loop(value)`                                                             | Indefinite repeat.                                             |
-| `Observable.Repeat(value, count)`   | `Signal.Loop(value, count)`                                                      | Fixed repeat.                                                  |
-| `Observable.Defer(factory)`         | `Signal.Lazy(factory)`                                                           | Create source per subscription.                                |
+| `Observable.Return(value)`          | `Signal.Emit(value)` or `Signal.Return(value)`                                   | Emits one value and completes.                                 |
+| `Observable.Empty<T>()`             | `Signal.None<T>()` or `Signal.Empty<T>()`                                        | Completes immediately.                                         |
+| `Observable.Never<T>()`             | `Signal.Silent<T>()`, `Signal.Silent<T>(witness)`, or `Signal.Never<T>()`        | Non-terminating signal; witness overload helps type inference. |
+| `Observable.Throw<T>(ex)`           | `Signal.Fail<T>(ex)` or `Signal.Throw<T>(ex)`                                    | Emits terminal error.                                          |
+| `Observable.Range(start, count)`    | `Signal.Sequence(start, count)` or `Signal.Range(start, count)`                  | Optional scheduler overload exists.                            |
+| `Observable.Repeat(value)`          | `Signal.Loop(value)` or `Signal.Repeat(value)`                                   | Indefinite repeat.                                             |
+| `Observable.Repeat(value, count)`   | `Signal.Loop(value, count)` or `Signal.Repeat(value, count)`                     | Fixed repeat.                                                  |
+| `Observable.Defer(factory)`         | `Signal.Lazy(factory)` or `Signal.Defer(factory)`                                | Create source per subscription.                                |
 | `Observable.FromAsync(...)`         | `Signal.FromAsync(...)`                                                          | Invoke a task factory per subscription.                        |
 | `Observable.Create<T>(...)`         | `Signal.Create<T>(...)` or `Signal.CreateSafe<T>(...)`                           | Prefer `CreateSafe` for general custom sources.                |
-| `Observable.Using(...)`             | `Signal.Use(...)`                                                                | Resource scoped to subscription.                               |
-| `Observable.Timer(dueTime)`         | `Signal.After(dueTime)`                                                          | Emits `long` tick `0`.                                         |
-| `Observable.Timer(dueTime, period)` | `Signal.After(dueTime, period)`                                                  | Periodic `long` ticks.                                         |
-| `Observable.Interval(period)`       | `Signal.Pulse(period)` , `Signal.Every(period)`  or `Signal.Interval(period)`    | Repeating ticks.                                               |
+| `Observable.Using(...)`             | `Signal.Use(...)` or `Signal.Using(...)`                                         | Resource scoped to subscription.                               |
+| `Observable.Timer(dueTime)`         | `Signal.After(dueTime)` or `Signal.Timer(dueTime)`                               | Emits `long` tick `0`. `Timer` also takes a `DateTimeOffset`.  |
+| `Observable.Timer(dueTime, period)` | `Signal.After(dueTime, period)` or `Signal.Timer(dueTime, period)`               | Periodic `long` ticks.                                         |
+| `Observable.Interval(period)`       | `Signal.Pulse(period)`, `Signal.Every(period)`, or `Signal.Interval(period)`     | Repeating ticks.                                               |
 | `ToObservable()` from enumerable    | `Signal.FromEnumerable(values)`, `values.ToSignal()`, or `values.ToObservable()` | Cancellation-token overloads are available.                    |
 | task conversion                     | `Signal.FromTask(task)`                                                          | Function-based task signals also exist.                        |
+| `Observable.Generate(...)`          | `Signal.Generate(state, condition, iterate, selector)`                           | Unfolds a state into a sequence.                               |
+| `Observable.If(condition, then)`    | `Signal.If(condition, then)` or `Signal.If(condition, then, else)`               | Chooses a source per subscription.                             |
+| `Observable.Case(selector, map)`    | `Signal.Case(selector, sources)` or `Signal.Case(selector, sources, default)`    | Chooses a source by key per subscription.                      |
+| `Observable.Concat(sources)`        | `Signal.Concat(sources)`                                                         | Subscribes to each source in turn.                             |
+| `Observable.Merge(sources)`         | `Signal.Merge(sources)`                                                          | Subscribes to every source at once.                            |
+| `Observable.Switch(sources)`        | `Signal.Switch(sources)`                                                         | Follows the most recent inner source.                          |
+| `Observable.OnErrorResumeNext(...)` | `Signal.OnErrorResumeNext(sources)`                                              | Continues with the next source after an error.                 |
 
 ### Subject/state mapping
 
